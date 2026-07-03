@@ -26,6 +26,16 @@ const state = {
     lastHighlightByPage: new Map(),
 };
 
+const HIGHLIGHT_STYLE = {
+    gradientStops: [
+        { offset: 0, color: 'rgba(255, 230, 0, 0.74)' },
+        { offset: 0.38, color: 'rgba(255, 215, 0, 0.46)' },
+        { offset: 0.72, color: 'rgba(255, 180, 0, 0.18)' },
+        { offset: 1, color: 'rgba(255, 180, 0, 0)' },
+    ],
+    stroke: 'rgba(255, 190, 0, 0.32)',
+};
+
 const els = {
     pdfInput: document.getElementById('pdfInput'),
     mediaFileInput: document.getElementById('mediaFileInput'),
@@ -72,7 +82,7 @@ els.nextPageButton.addEventListener('click', nextPage);
 els.pageSlider.addEventListener('input', () => setPage(Number(els.pageSlider.value)));
 els.youtubeAudio.addEventListener('error', () => {
     if (state.mediaType === 'youtube') {
-        setStatus('YouTube video loaded.');
+        setStatus('YouTube video loaded. Audio-only recording fallback is unavailable. Rebuild with Maven so the bundled yt-dlp binary is available, or configure scorepointer.ytdlp.command.');
     }
 });
 
@@ -263,7 +273,7 @@ function loadYoutubeFromInput() {
     els.mediaPanel.classList.remove('hidden');
     state.hasMedia = true;
 
-    setStatus('Loaded YouTube link.');
+    setStatus('Loaded YouTube link. Recording will use the Maven-bundled yt-dlp audio-only fallback when available.');
     updateControls();
 }
 
@@ -447,10 +457,10 @@ async function startRecording() {
 
         if (state.mediaType === 'youtube') {
             setStatus(youtubeAudioFallbackReady
-                ? 'Recording Score viewer...'
-                : 'Recording Score viewer...');
+                ? 'Recording PDF viewer only with YouTube audio fallback...'
+                : 'Recording PDF viewer only. YouTube iframe audio cannot be captured without the bundled yt-dlp audio fallback.');
         } else {
-            setStatus('Recording Score viewer...');
+            setStatus('Recording PDF viewer only...');
         }
     } catch (error) {
         stopRecordingFrameLoop();
@@ -555,25 +565,41 @@ function drawRecordedHighlight(ctx) {
     const radiusX = marker.radiusX * state.canvasScaleX;
     const radiusY = marker.radiusY * state.canvasScaleY;
 
+    const overlayCanvas = document.createElement('canvas');
+    overlayCanvas.width = state.recordingCanvas.width;
+    overlayCanvas.height = state.recordingCanvas.height;
+    const overlayCtx = overlayCanvas.getContext('2d');
+
+    overlayCtx.save();
+    overlayCtx.translate(x, y);
+    overlayCtx.scale(radiusX, radiusY);
+
+    const gradient = overlayCtx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    for (const stop of HIGHLIGHT_STYLE.gradientStops) {
+        gradient.addColorStop(stop.offset, stop.color);
+    }
+
+    overlayCtx.fillStyle = gradient;
+    overlayCtx.beginPath();
+    overlayCtx.arc(0, 0, 1, 0, Math.PI * 2);
+    overlayCtx.fill();
+
+    overlayCtx.globalAlpha = 0.36;
+    overlayCtx.fill();
+    overlayCtx.restore();
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.drawImage(overlayCanvas, 0, 0);
+    ctx.restore();
+
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(radiusX, radiusY);
-    ctx.globalCompositeOperation = 'multiply';
-
-    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
-    gradient.addColorStop(0, 'rgba(255, 230, 0, 0.62)');
-    gradient.addColorStop(0.38, 'rgba(255, 215, 0, 0.34)');
-    gradient.addColorStop(0.72, 'rgba(255, 180, 0, 0.12)');
-    gradient.addColorStop(1, 'rgba(255, 180, 0, 0)');
-
-    ctx.fillStyle = gradient;
+    ctx.strokeStyle = HIGHLIGHT_STYLE.stroke;
+    ctx.lineWidth = 1.2 / Math.max(radiusX, radiusY);
     ctx.beginPath();
     ctx.arc(0, 0, 1, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.strokeStyle = 'rgba(255, 190, 0, 0.24)';
-    ctx.lineWidth = 1 / Math.max(radiusX, radiusY);
     ctx.stroke();
     ctx.restore();
 }
