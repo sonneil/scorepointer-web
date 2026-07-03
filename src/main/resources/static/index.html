@@ -23,7 +23,17 @@
             <button id="loadYoutubeButton" class="button" type="button">Load YouTube</button>
         </div>
         <button id="recordButton" class="button record" disabled>Record</button>
-        <span id="status" class="status">Load a PDF and a video file or YouTube URL to enable recording.</span>
+        <div class="microphone-controls" aria-label="Microphone recording controls">
+            <label class="microphone-label" for="microphoneSelect">Mic</label>
+            <select id="microphoneSelect" title="Microphone for recording">
+                <option value="">Default microphone</option>
+            </select>
+            <label class="microphone-disable" title="Disable microphone recording">
+                <input id="disableMicrophoneCheckbox" type="checkbox" />
+                <span>Disable microphone recording</span>
+            </label>
+        </div>
+        <span id="status" class="status">Load a PDF. Click the Mic selector to grant microphone access, or add video/YouTube for multimedia audio.</span>
     </header>
 
     <main id="stage" class="stage">

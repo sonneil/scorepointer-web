@@ -55,6 +55,44 @@ body {
 .record.recording { background: rgba(229, 87, 87, 0.72); }
 .status { color: var(--muted); font-size: 14px; margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+.microphone-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.microphone-label {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+#microphoneSelect {
+    width: 180px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(255,255,255,0.08);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 10px;
+    font: inherit;
+    outline: none;
+}
+
+#microphoneSelect:focus { border-color: rgba(255,204,0,0.55); }
+#microphoneSelect:disabled { opacity: 0.48; cursor: not-allowed; }
+
+.microphone-disable {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.microphone-disable input { margin: 0; }
+
 .youtube-loader {
     display: flex;
     align-items: center;
@@ -203,13 +241,28 @@ body {
 
 .hidden { display: none !important; }
 
+@media (max-width: 1200px) {
+    .toolbar { gap: 8px; padding: 0 10px; }
+    .brand { display: none; }
+    .youtube-loader { min-width: 210px; max-width: 300px; flex-basis: 260px; }
+    #microphoneSelect { width: 150px; }
+    .microphone-label { display: none; }
+    .microphone-disable { font-size: 12px; }
+}
+
 @media (max-width: 900px) {
     .toolbar { gap: 6px; padding: 0 8px; }
-    .brand { display: none; }
     .button, button { padding: 8px 10px; font-size: 13px; }
-    .youtube-loader { min-width: 190px; flex-basis: 260px; }
+    .youtube-loader { min-width: 190px; flex-basis: 230px; }
     .status { display: none; }
+    .microphone-controls { gap: 6px; }
+    #microphoneSelect { width: 130px; }
+    .microphone-disable span { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
     :root { --media-width: 310px; --media-height: 170px; }
+}
+
+@media (max-width: 700px) {
+    .microphone-controls { display: none; }
 }
 
 @media (max-width: 640px) {
