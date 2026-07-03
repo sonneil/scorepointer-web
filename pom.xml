@@ -18,6 +18,11 @@
 
     <properties>
         <java.version>21</java.version>
+        <!-- Downloaded during Maven process-resources and bundled inside the Spring Boot jar. -->
+        <yt-dlp.windows.url>https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe</yt-dlp.windows.url>
+        <yt-dlp.linux.url>https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux</yt-dlp.linux.url>
+        <yt-dlp.linux.aarch64.url>https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux_aarch64</yt-dlp.linux.aarch64.url>
+        <yt-dlp.macos.url>https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos</yt-dlp.macos.url>
     </properties>
 
     <dependencies>
@@ -29,6 +34,45 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>bundle-yt-dlp-binaries</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${project.build.outputDirectory}/bin"/>
+
+                                <get src="${yt-dlp.windows.url}"
+                                     dest="${project.build.outputDirectory}/bin/yt-dlp.exe"
+                                     skipexisting="true"/>
+
+                                <get src="${yt-dlp.linux.url}"
+                                     dest="${project.build.outputDirectory}/bin/yt-dlp_linux"
+                                     skipexisting="true"/>
+                                <chmod file="${project.build.outputDirectory}/bin/yt-dlp_linux" perm="755"/>
+
+                                <get src="${yt-dlp.linux.aarch64.url}"
+                                     dest="${project.build.outputDirectory}/bin/yt-dlp_linux_aarch64"
+                                     skipexisting="true"/>
+                                <chmod file="${project.build.outputDirectory}/bin/yt-dlp_linux_aarch64" perm="755"/>
+
+                                <get src="${yt-dlp.macos.url}"
+                                     dest="${project.build.outputDirectory}/bin/yt-dlp_macos"
+                                     skipexisting="true"/>
+                                <chmod file="${project.build.outputDirectory}/bin/yt-dlp_macos" perm="755"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

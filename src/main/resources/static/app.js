@@ -11,6 +11,7 @@ const state = {
     canvasScaleY: 1,
     hasPdf: false,
     hasMedia: false,
+    mediaType: null,
     mediaRecorder: null,
     recordedChunks: [],
     recordingStream: null,
@@ -18,12 +19,18 @@ const state = {
     recordingContext: null,
     recordingFrameRequest: null,
     isRecording: false,
+    localObjectUrl: null,
+    youtubeUrl: null,
+    youtubeVideoId: null,
+    youtubeAudioCaptureStream: null,
     lastHighlightByPage: new Map(),
 };
 
 const els = {
     pdfInput: document.getElementById('pdfInput'),
     mediaFileInput: document.getElementById('mediaFileInput'),
+    youtubeUrlInput: document.getElementById('youtubeUrlInput'),
+    loadYoutubeButton: document.getElementById('loadYoutubeButton'),
     recordButton: document.getElementById('recordButton'),
     status: document.getElementById('status'),
     emptyState: document.getElementById('emptyState'),
@@ -38,6 +45,8 @@ const els = {
     pageIndicator: document.getElementById('pageIndicator'),
     mediaPanel: document.getElementById('mediaPanel'),
     videoPlayer: document.getElementById('videoPlayer'),
+    youtubePlayer: document.getElementById('youtubePlayer'),
+    youtubeAudio: document.getElementById('youtubeAudio'),
     playButton: document.getElementById('playButton'),
     pauseButton: document.getElementById('pauseButton'),
     stopButton: document.getElementById('stopButton'),
@@ -46,14 +55,26 @@ const els = {
 
 els.pdfInput.addEventListener('change', loadPdf);
 els.mediaFileInput.addEventListener('change', loadVideoFile);
+els.loadYoutubeButton.addEventListener('click', loadYoutubeFromInput);
+els.youtubeUrlInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        loadYoutubeFromInput();
+    }
+});
 els.recordButton.addEventListener('click', onRecordButton);
-els.playButton.addEventListener('click', playMedia);
+els.playButton.addEventListener('click', () => playMedia());
 els.pauseButton.addEventListener('click', pauseMedia);
 els.stopButton.addEventListener('click', stopMedia);
 els.canvasWrap.addEventListener('click', placeHighlightFromClick);
 els.previousPageButton.addEventListener('click', previousPage);
 els.nextPageButton.addEventListener('click', nextPage);
 els.pageSlider.addEventListener('input', () => setPage(Number(els.pageSlider.value)));
+els.youtubeAudio.addEventListener('error', () => {
+    if (state.mediaType === 'youtube') {
+        setStatus('YouTube video loaded.');
+    }
+});
 
 window.addEventListener('keydown', (event) => {
     if (!state.hasPdf || isTypingTarget(event.target)) return;
@@ -197,14 +218,15 @@ function loadVideoFile(event) {
     if (!file) return;
 
     if (!file.type.startsWith('video/')) {
-        setStatus('Please load a video file. Audio files and URLs are no longer supported.');
+        setStatus('Please load a video file or paste a YouTube URL. Audio files are not supported as local uploads.');
         event.target.value = '';
         return;
     }
 
     cleanupMedia();
-    const objectUrl = URL.createObjectURL(file);
-    els.videoPlayer.src = objectUrl;
+    state.localObjectUrl = URL.createObjectURL(file);
+    state.mediaType = 'video-file';
+    els.videoPlayer.src = state.localObjectUrl;
     els.videoPlayer.classList.remove('hidden');
     els.mediaPanel.classList.remove('hidden');
     state.hasMedia = true;
@@ -213,30 +235,165 @@ function loadVideoFile(event) {
     updateControls();
 }
 
+function loadYoutubeFromInput() {
+    const rawUrl = els.youtubeUrlInput.value.trim();
+    if (!rawUrl) {
+        setStatus('Paste a YouTube URL first.');
+        return;
+    }
+
+    let parsed;
+    try {
+        parsed = parseYoutubeUrl(rawUrl);
+    } catch (error) {
+        setStatus(error.message);
+        return;
+    }
+
+    cleanupMedia();
+    state.mediaType = 'youtube';
+    state.youtubeUrl = parsed.normalizedUrl;
+    state.youtubeVideoId = parsed.videoId;
+
+    const origin = encodeURIComponent(window.location.origin);
+    els.youtubePlayer.src = `https://www.youtube.com/embed/${parsed.videoId}?enablejsapi=1&origin=${origin}&rel=0&playsinline=1`;
+    els.youtubePlayer.classList.remove('hidden');
+    els.youtubeAudio.src = `/api/youtube/audio?url=${encodeURIComponent(parsed.normalizedUrl)}`;
+    els.youtubeAudio.load();
+    els.mediaPanel.classList.remove('hidden');
+    state.hasMedia = true;
+
+    setStatus('Loaded YouTube link.');
+    updateControls();
+}
+
+function parseYoutubeUrl(rawUrl) {
+    let normalized = rawUrl.trim();
+    if (!/^https?:\/\//i.test(normalized)) normalized = `https://${normalized}`;
+
+    let url;
+    try {
+        url = new URL(normalized);
+    } catch (_) {
+        throw new Error('Invalid YouTube URL.');
+    }
+
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, '').replace(/^m\./, '').replace(/^music\./, '');
+    let videoId = '';
+
+    if (hostname === 'youtu.be') {
+        videoId = url.pathname.split('/').filter(Boolean)[0] || '';
+    } else if (hostname === 'youtube.com' || hostname.endsWith('.youtube.com')) {
+        if (url.pathname === '/watch') {
+            videoId = url.searchParams.get('v') || '';
+        } else {
+            const parts = url.pathname.split('/').filter(Boolean);
+            if (['embed', 'shorts', 'live'].includes(parts[0])) videoId = parts[1] || '';
+        }
+    }
+
+    if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+        throw new Error('Could not find a valid YouTube video ID in that URL.');
+    }
+
+    return {
+        videoId,
+        normalizedUrl: `https://www.youtube.com/watch?v=${videoId}`,
+    };
+}
+
 function cleanupMedia() {
     stopMedia();
-    if (els.videoPlayer.src?.startsWith('blob:')) {
-        URL.revokeObjectURL(els.videoPlayer.src);
+
+    if (state.localObjectUrl) {
+        URL.revokeObjectURL(state.localObjectUrl);
+        state.localObjectUrl = null;
     }
+
     els.videoPlayer.removeAttribute('src');
     els.videoPlayer.load();
     els.videoPlayer.classList.add('hidden');
+
+    els.youtubePlayer.removeAttribute('src');
+    els.youtubePlayer.classList.add('hidden');
+    els.youtubeAudio.removeAttribute('src');
+    els.youtubeAudio.load();
+
     state.hasMedia = false;
+    state.mediaType = null;
+    state.youtubeUrl = null;
+    state.youtubeVideoId = null;
+    state.youtubeAudioCaptureStream = null;
 }
 
-function playMedia() {
+async function playMedia(options = {}) {
     if (!state.hasMedia) return;
-    els.videoPlayer.play().catch(() => setStatus('Browser blocked video playback. Press Play inside the media element.'));
+
+    if (state.mediaType === 'video-file') {
+        if (options.restart) safeSetCurrentTime(els.videoPlayer, 0);
+        await els.videoPlayer.play().catch(() => setStatus('Browser blocked video playback. Press Play inside the media element.'));
+        return;
+    }
+
+    if (state.mediaType === 'youtube') {
+        if (options.restart) {
+            sendYoutubeCommand('seekTo', [0, true]);
+            safeSetCurrentTime(els.youtubeAudio, 0);
+        }
+
+        if (options.forRecording && options.useYoutubeAudioFallback) {
+            sendYoutubeCommand('mute');
+            try {
+                await els.youtubeAudio.play();
+            } catch (_) {
+                sendYoutubeCommand('unMute');
+                setStatus('Could not start YouTube audio fallback. The visible YouTube player may play, but its audio cannot be captured by the recording.');
+            }
+        } else {
+            els.youtubeAudio.pause();
+            sendYoutubeCommand('unMute');
+        }
+
+        sendYoutubeCommand('playVideo');
+    }
 }
 
 function pauseMedia() {
     if (!state.hasMedia) return;
-    els.videoPlayer.pause();
+
+    if (state.mediaType === 'video-file') {
+        els.videoPlayer.pause();
+    } else if (state.mediaType === 'youtube') {
+        els.youtubeAudio.pause();
+        sendYoutubeCommand('pauseVideo');
+    }
 }
 
 function stopMedia() {
-    els.videoPlayer.pause();
-    try { els.videoPlayer.currentTime = 0; } catch (_) { }
+    if (state.mediaType === 'video-file') {
+        els.videoPlayer.pause();
+        safeSetCurrentTime(els.videoPlayer, 0);
+    } else if (state.mediaType === 'youtube') {
+        els.youtubeAudio.pause();
+        safeSetCurrentTime(els.youtubeAudio, 0);
+        sendYoutubeCommand('pauseVideo');
+        sendYoutubeCommand('seekTo', [0, true]);
+    } else {
+        els.videoPlayer.pause();
+        safeSetCurrentTime(els.videoPlayer, 0);
+        els.youtubeAudio.pause();
+        safeSetCurrentTime(els.youtubeAudio, 0);
+    }
+}
+
+function safeSetCurrentTime(element, seconds) {
+    try { element.currentTime = seconds; } catch (_) { }
+}
+
+function sendYoutubeCommand(func, args = []) {
+    const target = els.youtubePlayer.contentWindow;
+    if (!target) return;
+    target.postMessage(JSON.stringify({ event: 'command', func, args }), 'https://www.youtube.com');
 }
 
 async function onRecordButton() {
@@ -266,7 +423,7 @@ async function startRecording() {
 
         drawRecordingFrame();
         const stream = state.recordingCanvas.captureStream(30);
-        addVideoAudioTracks(stream);
+        const youtubeAudioFallbackReady = await addMediaAudioTracks(stream);
 
         const mimeType = chooseRecordingMimeType();
         const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
@@ -284,27 +441,80 @@ async function startRecording() {
         updateControls();
 
         await countdown();
-        playMedia();
+        await playMedia({ forRecording: true, restart: true, useYoutubeAudioFallback: youtubeAudioFallbackReady });
         startRecordingFrameLoop();
         recorder.start(1000);
-        setStatus('Recording PDF viewer only...');
+
+        if (state.mediaType === 'youtube') {
+            setStatus(youtubeAudioFallbackReady
+                ? 'Recording Score viewer...'
+                : 'Recording Score viewer...');
+        } else {
+            setStatus('Recording Score viewer...');
+        }
     } catch (error) {
         stopRecordingFrameLoop();
         stopRecordingStreamTracks();
         state.isRecording = false;
+        els.recordButton.textContent = 'Record';
+        els.recordButton.classList.remove('recording');
         setStatus(`Recording failed: ${error.message}`);
         updateControls();
     }
 }
 
-function addVideoAudioTracks(stream) {
-    const captureStream = els.videoPlayer.captureStream || els.videoPlayer.mozCaptureStream;
-    if (!captureStream) return;
-
-    const videoStream = captureStream.call(els.videoPlayer);
-    for (const track of videoStream.getAudioTracks()) {
-        stream.addTrack(track);
+async function addMediaAudioTracks(stream) {
+    if (state.mediaType === 'video-file') {
+        await waitForMediaReady(els.videoPlayer, 3000).catch(() => false);
+        return addTracksFromMediaElement(stream, els.videoPlayer, 'uploaded video');
     }
+
+    if (state.mediaType === 'youtube') {
+        const ready = await waitForMediaReady(els.youtubeAudio, 7000).catch(() => false);
+        if (!ready) return false;
+        return addTracksFromMediaElement(stream, els.youtubeAudio, 'YouTube audio fallback');
+    }
+
+    return false;
+}
+
+function addTracksFromMediaElement(stream, mediaElement, label) {
+    const captureStream = mediaElement.captureStream || mediaElement.mozCaptureStream;
+    if (!captureStream) {
+        setStatus(`This browser cannot capture ${label} audio. The recording will be silent.`);
+        return false;
+    }
+
+    const mediaStream = captureStream.call(mediaElement);
+    const audioTracks = mediaStream.getAudioTracks();
+    if (!audioTracks.length) return false;
+
+    for (const track of audioTracks) stream.addTrack(track);
+    if (label === 'YouTube audio fallback') state.youtubeAudioCaptureStream = mediaStream;
+    return true;
+}
+
+function waitForMediaReady(mediaElement, timeoutMs) {
+    if (mediaElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return Promise.resolve(true);
+
+    return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => cleanup(false), timeoutMs);
+        const onReady = () => cleanup(true);
+        const onError = () => cleanup(false);
+
+        function cleanup(success) {
+            clearTimeout(timeout);
+            mediaElement.removeEventListener('loadedmetadata', onReady);
+            mediaElement.removeEventListener('canplay', onReady);
+            mediaElement.removeEventListener('error', onError);
+            success ? resolve(true) : reject(new Error('Media not ready'));
+        }
+
+        mediaElement.addEventListener('loadedmetadata', onReady, { once: true });
+        mediaElement.addEventListener('canplay', onReady, { once: true });
+        mediaElement.addEventListener('error', onError, { once: true });
+        mediaElement.load();
+    });
 }
 
 function startRecordingFrameLoop() {
@@ -387,6 +597,10 @@ function stopRecordingStreamTracks() {
     if (state.recordingStream) {
         state.recordingStream.getTracks().forEach(track => track.stop());
         state.recordingStream = null;
+    }
+    if (state.youtubeAudioCaptureStream) {
+        state.youtubeAudioCaptureStream.getTracks().forEach(track => track.stop());
+        state.youtubeAudioCaptureStream = null;
     }
 }
 
