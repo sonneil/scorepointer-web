@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ScorePointer Web</title>
+    <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div id="app">
+    <header class="toolbar">
+        <div class="brand">ScorePointer Web</div>
+        <label class="button">
+            Load PDF
+            <input id="pdfInput" type="file" accept="application/pdf" hidden />
+        </label>
+        <label class="button">
+            Load video
+            <input id="mediaFileInput" type="file" accept="video/*" hidden />
+        </label>
+        <button id="recordButton" class="button record" disabled>Record</button>
+        <span id="status" class="status">Load a PDF and a video file to enable recording.</span>
+    </header>
+
+    <main id="stage" class="stage">
+        <section id="emptyState" class="empty-state">
+            <h1>Load a PDF score</h1>
+            <p>Then click on the score to place the ellipse highlight.</p>
+        </section>
+
+        <section id="pdfViewer" class="pdf-viewer hidden">
+            <div id="canvasWrap" class="canvas-wrap">
+                <canvas id="pdfCanvas"></canvas>
+                <div id="measureHighlight" class="measure-highlight hidden"></div>
+            </div>
+            <div id="pageControls" class="page-controls hidden">
+                <button id="previousPageButton" class="nav-button" title="Previous page">‹</button>
+                <input id="pageSlider" type="range" min="1" max="1" value="1" step="1" />
+                <button id="nextPageButton" class="nav-button" title="Next page">›</button>
+                <span id="pageIndicator">Page 1 / 1</span>
+            </div>
+        </section>
+
+        <section id="mediaPanel" class="media-panel hidden">
+            <div class="media-shell">
+                <video id="videoPlayer" class="media-view hidden" controls playsinline></video>
+                <div class="mini-controls">
+                    <button id="playButton">Play</button>
+                    <button id="pauseButton">Pause</button>
+                    <button id="stopButton">Stop</button>
+                </div>
+            </div>
+        </section>
+
+        <div id="countdown" class="countdown hidden">3</div>
+
+    </main>
+</div>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>

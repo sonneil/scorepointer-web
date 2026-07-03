@@ -1,0 +1,188 @@
+:root {
+    --toolbar-height: 64px;
+    --media-width: 360px;
+    --media-height: 230px;
+    --bg: #111317;
+    --panel: rgba(25, 28, 35, 0.88);
+    --text: #f5f7fb;
+    --muted: #a9b0c2;
+    --accent: #ffcc00;
+    --danger: #e55757;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    overflow: hidden;
+}
+
+.toolbar {
+    height: var(--toolbar-height);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px;
+    background: #171a21;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    z-index: 50;
+    position: relative;
+}
+
+.brand {
+    font-weight: 700;
+    margin-right: 8px;
+    letter-spacing: 0.2px;
+}
+
+.button, button {
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(255,255,255,0.08);
+    color: var(--text);
+    padding: 9px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    font: inherit;
+    user-select: none;
+}
+
+.button:hover, button:hover { background: rgba(255,255,255,0.14); }
+.button:disabled, button:disabled { opacity: 0.45; cursor: not-allowed; }
+.record { background: rgba(229, 87, 87, 0.22); border-color: rgba(229,87,87,0.45); }
+.record.recording { background: rgba(229, 87, 87, 0.72); }
+.status { color: var(--muted); font-size: 14px; margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.stage {
+    position: relative;
+    height: calc(100vh - var(--toolbar-height));
+    width: 100vw;
+    overflow: hidden;
+    background: radial-gradient(circle at center, #242933 0%, #111317 70%);
+}
+
+.empty-state {
+    height: 100%;
+    display: grid;
+    place-content: center;
+    text-align: center;
+    color: var(--muted);
+}
+.empty-state h1 { color: var(--text); margin-bottom: 8px; }
+
+.pdf-viewer {
+    height: 100%;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) 54px;
+    align-items: center;
+    justify-items: center;
+}
+
+.canvas-wrap {
+    position: relative;
+    max-width: 100vw;
+    max-height: calc(100vh - var(--toolbar-height) - 54px);
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+}
+
+#pdfCanvas {
+    display: block;
+    background: white;
+    box-shadow: 0 12px 48px rgba(0,0,0,0.55);
+    max-width: 100vw;
+    max-height: calc(100vh - var(--toolbar-height) - 54px);
+}
+
+.measure-highlight {
+    position: absolute;
+    pointer-events: none;
+    width: 230px;
+    height: 82px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle at center,
+        rgba(255, 230, 0, 0.62) 0%,
+        rgba(255, 215, 0, 0.34) 38%,
+        rgba(255, 180, 0, 0.12) 72%,
+        rgba(255, 180, 0, 0.00) 100%);
+    border: 1px solid rgba(255, 190, 0, 0.24);
+    mix-blend-mode: multiply;
+}
+
+.page-controls {
+    height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: min(880px, 96vw);
+    padding: 8px 12px;
+    background: rgba(0,0,0,0.26);
+    border-radius: 14px 14px 0 0;
+}
+
+#pageSlider { width: min(620px, 64vw); }
+#pageIndicator { color: var(--muted); font-size: 14px; min-width: 100px; text-align: right; }
+.nav-button { width: 40px; height: 36px; padding: 0; font-size: 28px; line-height: 1; }
+
+.media-panel {
+    position: absolute;
+    left: 75%;
+    bottom: 70px;
+    transform: translateX(-25%);
+    z-index: 30;
+    width: var(--media-width);
+}
+
+.media-shell {
+    background: var(--panel);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 18px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.48);
+    padding: 10px;
+    backdrop-filter: blur(10px);
+}
+
+.media-view {
+    width: 100%;
+    height: var(--media-height);
+    background: black;
+    border-radius: 12px;
+    display: block;
+}
+
+
+.mini-controls {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+.mini-controls button { padding: 7px 12px; font-size: 14px; }
+
+.countdown {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: clamp(90px, 20vw, 240px);
+    font-weight: 800;
+    color: white;
+    text-shadow: 0 8px 44px rgba(0,0,0,0.8);
+    background: rgba(0,0,0,0.22);
+    z-index: 100;
+}
+
+.hidden { display: none !important; }
+
+@media (max-width: 700px) {
+    .toolbar { gap: 6px; padding: 0 8px; }
+    .brand { display: none; }
+    .button, button { padding: 8px 10px; font-size: 13px; }
+    .status { display: none; }
+    :root { --media-width: 310px; --media-height: 170px; }
+}
