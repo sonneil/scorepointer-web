@@ -22,18 +22,18 @@
             <input id="youtubeUrlInput" type="url" placeholder="YouTube URL" aria-label="YouTube URL" />
             <button id="loadYoutubeButton" class="button" type="button">Load YouTube</button>
         </div>
-        <button id="recordButton" class="button record" disabled>Record</button>
+        <button id="recordButton" class="button record" disabled>Start Recording</button>
         <div class="microphone-controls" aria-label="Microphone recording controls">
             <label class="microphone-label" for="microphoneSelect">Mic</label>
             <select id="microphoneSelect" title="Microphone for recording">
                 <option value="">Default microphone</option>
             </select>
-            <label class="microphone-disable" title="Disable microphone recording">
-                <input id="disableMicrophoneCheckbox" type="checkbox" />
-                <span>Disable microphone recording</span>
+            <label class="microphone-enable" title="Enable microphone recording">
+                <input id="enableMicrophoneCheckbox" type="checkbox" />
+                <span>Enable microphone</span>
             </label>
         </div>
-        <span id="status" class="status">Load a PDF. Click the Mic selector to grant microphone access, or add video/YouTube for multimedia audio.</span>
+        <span id="status" class="status">Load a PDF, then enable microphone or load video to start the pointer.</span>
     </header>
 
     <main id="stage" class="stage">
@@ -57,7 +57,7 @@
 
         <section id="mediaPanel" class="media-panel hidden">
             <div class="media-shell">
-                <video id="videoPlayer" class="media-view hidden" controls playsinline></video>
+                <video id="videoPlayer" class="media-view hidden" controls playsinline preload="auto"></video>
                 <iframe id="youtubePlayer" class="media-view hidden" title="YouTube player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
                 <audio id="youtubeAudio" class="hidden" preload="auto" crossorigin="anonymous"></audio>
                 <div class="mini-controls">
@@ -67,6 +67,21 @@
                 </div>
             </div>
         </section>
+
+        <dialog id="microphoneDialog" class="microphone-dialog">
+            <form id="microphoneDialogForm" class="microphone-dialog-card" method="dialog">
+                <h2>Enable microphone recording</h2>
+                <p id="microphoneDialogMessage">Allow microphone access, then select the preferred input device.</p>
+                <label class="dialog-field" for="dialogMicrophoneSelect">Preferred microphone</label>
+                <select id="dialogMicrophoneSelect">
+                    <option value="">Default microphone</option>
+                </select>
+                <div class="dialog-actions">
+                    <button id="microphoneDialogCancel" type="button">Cancel</button>
+                    <button id="microphoneDialogConfirm" type="button" class="button">Allow microphone access</button>
+                </div>
+            </form>
+        </dialog>
 
         <div id="countdown" class="countdown hidden">3</div>
 

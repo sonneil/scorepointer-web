@@ -1,7 +1,7 @@
 :root {
     --toolbar-height: 64px;
-    --media-width: 360px;
-    --media-height: 230px;
+    --media-width: min(760px, calc(50vw - 48px));
+    --media-height: auto;
     --bg: #111317;
     --panel: rgba(25, 28, 35, 0.88);
     --text: #f5f7fb;
@@ -69,7 +69,7 @@ body {
     font-size: 13px;
 }
 
-#microphoneSelect {
+#microphoneSelect, #dialogMicrophoneSelect {
     width: 180px;
     border: 1px solid rgba(255,255,255,0.14);
     background: rgba(255,255,255,0.08);
@@ -80,10 +80,10 @@ body {
     outline: none;
 }
 
-#microphoneSelect:focus { border-color: rgba(255,204,0,0.55); }
-#microphoneSelect:disabled { opacity: 0.48; cursor: not-allowed; }
+#microphoneSelect:focus, #dialogMicrophoneSelect:focus { border-color: rgba(255,204,0,0.55); }
+#microphoneSelect:disabled, #dialogMicrophoneSelect:disabled { opacity: 0.48; cursor: not-allowed; }
 
-.microphone-disable {
+.microphone-enable {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -91,7 +91,7 @@ body {
     user-select: none;
 }
 
-.microphone-disable input { margin: 0; }
+.microphone-enable input { margin: 0; }
 
 .youtube-loader {
     display: flex;
@@ -136,10 +136,15 @@ body {
 
 .pdf-viewer {
     height: 100%;
+    width: 100%;
     display: grid;
     grid-template-rows: minmax(0, 1fr) 54px;
     align-items: center;
     justify-items: center;
+}
+
+.stage.media-layout .pdf-viewer {
+    width: 50vw;
 }
 
 .canvas-wrap {
@@ -151,12 +156,20 @@ body {
     place-items: center;
 }
 
+.stage.media-layout .canvas-wrap {
+    max-width: 50vw;
+}
+
 #pdfCanvas {
     display: block;
     background: white;
     box-shadow: 0 12px 48px rgba(0,0,0,0.55);
     max-width: 100vw;
     max-height: calc(100vh - var(--toolbar-height) - 54px);
+}
+
+.stage.media-layout #pdfCanvas {
+    max-width: 50vw;
 }
 
 .measure-highlight {
@@ -187,6 +200,10 @@ body {
     border-radius: 14px 14px 0 0;
 }
 
+.stage.media-layout .page-controls {
+    width: min(880px, calc(50vw - 24px));
+}
+
 #pageSlider { width: min(620px, 64vw); }
 #pageIndicator { color: var(--muted); font-size: 14px; min-width: 100px; text-align: right; }
 .nav-button { width: 40px; height: 36px; padding: 0; font-size: 28px; line-height: 1; }
@@ -194,8 +211,9 @@ body {
 .media-panel {
     position: absolute;
     left: 75%;
-    bottom: 70px;
-    transform: translateX(-25%);
+    top: 50%;
+    bottom: auto;
+    transform: translate(-50%, -50%);
     z-index: 30;
     width: var(--media-width);
 }
@@ -211,11 +229,13 @@ body {
 
 .media-view {
     width: 100%;
-    height: var(--media-height);
+    aspect-ratio: 16 / 9;
+    height: auto;
     background: black;
     border: 0;
     border-radius: 12px;
     display: block;
+    object-fit: contain;
 }
 
 .mini-controls {
@@ -241,13 +261,28 @@ body {
 
 .hidden { display: none !important; }
 
+
+@media (max-width: 900px) {
+    .stage.media-layout .pdf-viewer { width: 100%; }
+    .stage.media-layout .canvas-wrap { max-width: 100vw; }
+    .stage.media-layout #pdfCanvas { max-width: 100vw; }
+    .stage.media-layout .page-controls { width: min(880px, 96vw); }
+    .media-panel {
+        left: 50%;
+        top: auto;
+        bottom: 70px;
+        width: min(360px, calc(100vw - 28px));
+        transform: translateX(-50%);
+    }
+}
+
 @media (max-width: 1200px) {
     .toolbar { gap: 8px; padding: 0 10px; }
     .brand { display: none; }
     .youtube-loader { min-width: 210px; max-width: 300px; flex-basis: 260px; }
-    #microphoneSelect { width: 150px; }
+    #microphoneSelect, #dialogMicrophoneSelect { width: 150px; }
     .microphone-label { display: none; }
-    .microphone-disable { font-size: 12px; }
+    .microphone-enable { font-size: 12px; }
 }
 
 @media (max-width: 900px) {
@@ -256,9 +291,9 @@ body {
     .youtube-loader { min-width: 190px; flex-basis: 230px; }
     .status { display: none; }
     .microphone-controls { gap: 6px; }
-    #microphoneSelect { width: 130px; }
-    .microphone-disable span { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
-    :root { --media-width: 310px; --media-height: 170px; }
+    #microphoneSelect, #dialogMicrophoneSelect { width: 130px; }
+    .microphone-enable span { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+    :root { --media-width: min(520px, calc(50vw - 28px)); }
 }
 
 @media (max-width: 700px) {
@@ -267,4 +302,52 @@ body {
 
 @media (max-width: 640px) {
     .youtube-loader { display: none; }
+}
+
+
+.microphone-dialog {
+    width: min(460px, calc(100vw - 32px));
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 18px;
+    background: #171a21;
+    color: var(--text);
+    padding: 0;
+    box-shadow: 0 24px 90px rgba(0,0,0,0.65);
+}
+
+.microphone-dialog::backdrop {
+    background: rgba(0,0,0,0.62);
+}
+
+.microphone-dialog-card {
+    display: grid;
+    gap: 12px;
+    padding: 22px;
+}
+
+.microphone-dialog-card h2 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.microphone-dialog-card p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.35;
+}
+
+.dialog-field {
+    font-size: 13px;
+    color: var(--muted);
+}
+
+#dialogMicrophoneSelect {
+    width: 100%;
+}
+
+.dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 4px;
 }

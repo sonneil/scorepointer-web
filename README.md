@@ -10,12 +10,12 @@ It runs locally in your browser and provides:
 - Bottom page slider
 - Ellipse highlight with radial gradient on click
 - Local video loading
-- YouTube URL loading with embedded playback
+- YouTube URL loading with embedded playback and an audio-only recording notice
 - YouTube audio-only recording fallback through the local Spring Boot backend using a Maven-bundled `yt-dlp` binary
-- Mini-player positioned at the bottom center
-- Browser-based recording with countdown, automatic media playback, and optional microphone capture
-- PDF-viewer-only recording output: the exported video contains only the PDF page and the ellipse highlight, not the toolbar, page controls, or media player panel
-- Microphone device selection and a toolbar checkbox to disable microphone recording
+- Large media preview positioned in the right half of the screen on desktop
+- Browser-based recording with countdown, automatic media playback, optional microphone capture, and uploaded-video picture included in the exported recording
+- Recording output excludes the toolbar, page controls, and media player controls. When a local video is loaded, the exported recording includes the PDF page plus the uploaded video frame side-by-side.
+- Microphone device selection and a toolbar checkbox to enable microphone recording
 - Save As support when the browser supports the File System Access API
 
 ## Requirements
@@ -23,7 +23,7 @@ It runs locally in your browser and provides:
 - Java 21+
 - Maven 3.9+
 - Modern Chromium-based browser recommended: Chrome, Edge, Brave
-- Browser microphone permission if microphone capture is enabled. Permission is requested when the user clicks the **Mic** selector.
+- Browser microphone permission if microphone capture is enabled. Permission is requested from the microphone setup dialog when **Enable microphone** is checked.
 - Internet access during the first Maven build so Maven can download the bundled `yt-dlp` binaries
 
 ## Run in development mode
@@ -60,15 +60,15 @@ http://localhost:8080
 
 Use **Load video** to upload a local video file.
 
-When you press **Record**, the app records an internal canvas copy of the PDF page plus the ellipse highlight. It does not use browser screen sharing, so the exported video excludes the top toolbar, page controls, and media player panel.
+When you press **Start Recording**, the app records an internal canvas composition. With a local video loaded, the exported file includes the PDF page plus the uploaded video frame side-by-side. It does not use browser screen sharing, so the exported video excludes the top toolbar, page controls, media player controls, and microphone setup controls.
 
-If the uploaded video has audio and the browser supports `HTMLMediaElement.captureStream()`, the recording includes the uploaded video's audio. By default, microphone recording is enabled; click the **Mic** selector to grant browser permission and choose the input device. Use **Disable microphone recording** to record only the PDF viewer plus multimedia audio.
+If the uploaded video has audio and the browser supports `HTMLMediaElement.captureStream()`, the recording includes the uploaded video's audio. Check **Enable microphone** to open the microphone setup dialog, grant browser permission, and choose the input device. Leave it unchecked to record only the multimedia audio.
 
 ## YouTube behavior
 
 Paste a YouTube link in the toolbar and click **Load YouTube**.
 
-The app embeds the YouTube video in the media panel for playback. Browsers do not allow an app to directly capture video or audio from a cross-origin YouTube iframe, so the recorded output still contains only the PDF viewer canvas.
+When a YouTube link is loaded, the app shows a dialog explaining that YouTube recordings include audio only. The app still embeds the YouTube video in the right-side media panel for playback. Browsers do not allow an app to directly capture video or audio from a cross-origin YouTube iframe, so YouTube recording can include the PDF viewer plus the backend audio fallback, but not the YouTube video image.
 
 To record YouTube audio, the app provides this same-origin backend endpoint:
 
@@ -115,13 +115,13 @@ scorepointer.ytdlp.command=C:/absolute/path/to/yt-dlp.exe
 
 The web version uses the browser `MediaRecorder` and `HTMLCanvasElement.captureStream()` APIs.
 
-When you press **Record**, the app records an internal canvas copy of the PDF page plus the ellipse highlight. It does not use browser screen sharing, so the exported video excludes the top toolbar, page controls, and media player panel.
+When you press **Start Recording**, the app records an internal canvas composition. If a local video file is loaded, the composition includes the PDF page plus the uploaded video frame side-by-side. It does not use browser screen sharing, so the exported video excludes the top toolbar, page controls, media player controls, and microphone setup controls.
 
 The recording format depends on the browser. Most browsers generate `.webm`. Some browsers may support `.mp4`.
 
-By default, microphone recording is enabled. Click the **Mic** combo next to **Record** to request browser microphone permission and choose the input device. If browser labels appear as generic names like `Microphone 1`, grant microphone permission from that combo and the list is refreshed. Check **Disable microphone recording** to exclude microphone audio from the exported file.
+By default, microphone recording is disabled. Check **Enable microphone** next to **Start Recording** to open the setup dialog. The dialog requests browser microphone permission when needed and then lets you select the preferred input device. If browser labels appear as generic names like `Microphone 1`, grant microphone permission and the list is refreshed.
 
-The app mixes multimedia audio and microphone audio through the Web Audio API into one recording track, so both sources are included in the exported video when available. If microphone recording is enabled, you can start recording with only a PDF loaded; video or YouTube is not required.
+The app mixes multimedia audio and microphone audio through the Web Audio API into one recording track, so both sources are included in the exported video when available. If neither microphone nor multimedia is enabled and only a PDF is loaded, pressing **Start Recording** shows: `Please enable your microphone or load a Video to start the pointer`.
 
 ## Save As behavior
 
@@ -143,7 +143,7 @@ This keeps the Spring Boot app small. If you need a fully offline build, bundle 
 
 - Browser recording generally exports WebM, not MP4.
 - Microphone capture requires browser permission and may show generic device names until permission has been granted.
-- The PDF-viewer-only recording is generated from the rendered PDF canvas, so it records the PDF page and highlight rather than a literal screen crop.
+- The recording is generated from rendered browser canvases, so it records the PDF page, highlight, and uploaded local video frame rather than a literal screen crop.
 - YouTube iframe video/audio cannot be directly captured by the browser. YouTube recording uses the backend audio-only fallback through the Maven-bundled `yt-dlp` binary.
 - The YouTube fallback records audio only; it does not add the YouTube video image to the exported recording.
 - The highlight is intentionally approximate for the MVP: it uses a radial ellipse instead of measure detection.

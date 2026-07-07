@@ -18,6 +18,7 @@ const state = {
     recordingCanvas: null,
     recordingContext: null,
     recordingFrameRequest: null,
+    recordingLayout: null,
     isRecording: false,
     localObjectUrl: null,
     youtubeUrl: null,
@@ -51,8 +52,9 @@ const els = {
     loadYoutubeButton: document.getElementById('loadYoutubeButton'),
     recordButton: document.getElementById('recordButton'),
     microphoneSelect: document.getElementById('microphoneSelect'),
-    disableMicrophoneCheckbox: document.getElementById('disableMicrophoneCheckbox'),
+    enableMicrophoneCheckbox: document.getElementById('enableMicrophoneCheckbox'),
     status: document.getElementById('status'),
+    stage: document.getElementById('stage'),
     emptyState: document.getElementById('emptyState'),
     pdfViewer: document.getElementById('pdfViewer'),
     canvasWrap: document.getElementById('canvasWrap'),
@@ -71,6 +73,11 @@ const els = {
     pauseButton: document.getElementById('pauseButton'),
     stopButton: document.getElementById('stopButton'),
     countdown: document.getElementById('countdown'),
+    microphoneDialog: document.getElementById('microphoneDialog'),
+    microphoneDialogMessage: document.getElementById('microphoneDialogMessage'),
+    dialogMicrophoneSelect: document.getElementById('dialogMicrophoneSelect'),
+    microphoneDialogCancel: document.getElementById('microphoneDialogCancel'),
+    microphoneDialogConfirm: document.getElementById('microphoneDialogConfirm'),
 };
 
 els.pdfInput.addEventListener('change', loadPdf);
@@ -83,10 +90,10 @@ els.youtubeUrlInput.addEventListener('keydown', (event) => {
     }
 });
 els.recordButton.addEventListener('click', onRecordButton);
-els.microphoneSelect.addEventListener('focus', requestMicrophoneAccessFromSelector);
-els.microphoneSelect.addEventListener('pointerdown', requestMicrophoneAccessFromSelector);
-els.microphoneSelect.addEventListener('click', requestMicrophoneAccessFromSelector);
-els.disableMicrophoneCheckbox.addEventListener('change', onDisableMicrophoneChanged);
+els.microphoneSelect.addEventListener('focus', onMicrophoneSelectorInteraction);
+els.microphoneSelect.addEventListener('pointerdown', onMicrophoneSelectorInteraction);
+els.microphoneSelect.addEventListener('click', onMicrophoneSelectorInteraction);
+els.enableMicrophoneCheckbox.addEventListener('change', onEnableMicrophoneChanged);
 els.playButton.addEventListener('click', () => playMedia());
 els.pauseButton.addEventListener('click', pauseMedia);
 els.stopButton.addEventListener('click', stopMedia);
@@ -112,6 +119,7 @@ window.addEventListener('keydown', (event) => {
 });
 
 window.addEventListener('resize', () => {
+    updateMediaLayout();
     if (state.hasPdf) renderCurrentPage();
 });
 
@@ -152,7 +160,8 @@ async function renderCurrentPage() {
 
     const page = await state.pdf.getPage(state.currentPage);
     const unscaledViewport = page.getViewport({ scale: 1 });
-    const availableWidth = window.innerWidth - 24;
+    const mediaLayoutActive = isMediaSideLayoutActive();
+    const availableWidth = (mediaLayoutActive ? window.innerWidth * 0.5 : window.innerWidth) - 24;
     const availableHeight = window.innerHeight - 64 - 54 - 16;
     const fitScale = Math.min(availableWidth / unscaledViewport.width, availableHeight / unscaledViewport.height);
     state.renderScale = Math.max(0.5, Math.min(2.5, fitScale * window.devicePixelRatio));
@@ -239,9 +248,9 @@ function updateControls() {
     els.previousPageButton.disabled = !state.hasPdf || state.currentPage <= 1;
     els.nextPageButton.disabled = !state.hasPdf || state.currentPage >= state.pageCount;
 
-    const microphoneRecordingEnabled = !els.disableMicrophoneCheckbox.checked && Boolean(navigator.mediaDevices?.getUserMedia);
-    const hasRecordableAudioSource = state.hasMedia || microphoneRecordingEnabled;
-    els.recordButton.disabled = !state.isRecording && !(state.hasPdf && hasRecordableAudioSource);
+    // Keep Start Recording clickable once a PDF is loaded so we can show a clear dialog
+    // when neither video nor microphone is enabled.
+    els.recordButton.disabled = !state.isRecording && !state.hasPdf;
 
     updateMicrophoneControls();
 }
@@ -259,10 +268,14 @@ function loadVideoFile(event) {
     cleanupMedia();
     state.localObjectUrl = URL.createObjectURL(file);
     state.mediaType = 'video-file';
+    els.videoPlayer.preload = 'auto';
     els.videoPlayer.src = state.localObjectUrl;
+    els.videoPlayer.load();
     els.videoPlayer.classList.remove('hidden');
     els.mediaPanel.classList.remove('hidden');
     state.hasMedia = true;
+    updateMediaLayout();
+    if (state.hasPdf) renderCurrentPage();
 
     setStatus(`Loaded video file: ${file.name}`);
     updateControls();
@@ -295,9 +308,24 @@ function loadYoutubeFromInput() {
     els.youtubeAudio.load();
     els.mediaPanel.classList.remove('hidden');
     state.hasMedia = true;
+    updateMediaLayout();
+    if (state.hasPdf) renderCurrentPage();
+    showYoutubeAudioOnlyDialog();
 
-    setStatus('Loaded YouTube link. Recording will use the Maven-bundled yt-dlp audio-only fallback when available.');
+    setStatus('Loaded YouTube link. Recording will include only YouTube audio through the Maven-bundled yt-dlp fallback when available.');
     updateControls();
+}
+
+function showYoutubeAudioOnlyDialog() {
+    window.alert('For YouTube videos, the recording will include audio only. The YouTube video preview will be visible while you play, but browser security does not allow the app to include the YouTube iframe video image in the recording.');
+}
+
+function isMediaSideLayoutActive() {
+    return state.hasMedia && window.innerWidth > 900;
+}
+
+function updateMediaLayout() {
+    els.stage.classList.toggle('media-layout', isMediaSideLayoutActive());
 }
 
 function parseYoutubeUrl(rawUrl) {
@@ -357,6 +385,8 @@ function cleanupMedia() {
     state.youtubeUrl = null;
     state.youtubeVideoId = null;
     state.youtubeAudioCaptureStream = null;
+    updateMediaLayout();
+    if (state.hasPdf) renderCurrentPage();
 }
 
 async function playMedia(options = {}) {
@@ -388,6 +418,38 @@ async function playMedia(options = {}) {
         }
 
         sendYoutubeCommand('playVideo');
+    }
+}
+
+async function unlockMediaPlaybackForRecording() {
+    if (!state.hasMedia) return;
+
+    if (state.mediaType === 'video-file') {
+        const previousVolume = els.videoPlayer.volume;
+        try {
+            safeSetCurrentTime(els.videoPlayer, 0);
+            els.videoPlayer.volume = 0;
+            await els.videoPlayer.play();
+            await waitForVideoPlaybackFrame(els.videoPlayer, 800).catch(() => false);
+        } catch (_) {
+            // The final play attempt after the countdown will show the user-facing status if blocked.
+        } finally {
+            els.videoPlayer.pause();
+            els.videoPlayer.volume = previousVolume;
+            safeSetCurrentTime(els.videoPlayer, 0);
+        }
+        return;
+    }
+
+    if (state.mediaType === 'youtube') {
+        try {
+            safeSetCurrentTime(els.youtubeAudio, 0);
+            await els.youtubeAudio.play();
+            els.youtubeAudio.pause();
+            safeSetCurrentTime(els.youtubeAudio, 0);
+        } catch (_) {
+            // The YouTube audio fallback may still become available before the real recording starts.
+        }
     }
 }
 
@@ -447,20 +509,78 @@ async function startRecording() {
         return;
     }
 
+    if (!state.hasMedia && !isMicrophoneRecordingEnabled()) {
+        showStartPointerRequirementDialog();
+        return;
+    }
+
+    if (isMicrophoneRecordingEnabled() && !state.microphonePermissionGranted) {
+        const configured = await openMicrophoneSetupDialog();
+        if (!configured) {
+            els.enableMicrophoneCheckbox.checked = false;
+            updateControls();
+            if (!state.hasMedia) {
+                showStartPointerRequirementDialog();
+                return;
+            }
+        }
+    }
+
+    const mediaUnlockPromise = unlockMediaPlaybackForRecording();
+
     try {
-        setStatus('Preparing PDF-only recording...');
+        setStatus('Preparing recording...');
+
+        const includeUploadedVideo = state.mediaType === 'video-file'
+            ? await ensureUploadedVideoMetadataReady()
+            : false;
+        const youtubeAudioFallbackReadyBeforePlayback = state.mediaType === 'youtube'
+            ? await waitForMediaReady(els.youtubeAudio, 7000).catch(() => false)
+            : false;
+
+        state.recordingLayout = createRecordingLayout(includeUploadedVideo);
         state.recordingCanvas = document.createElement('canvas');
-        state.recordingCanvas.width = els.pdfCanvas.width;
-        state.recordingCanvas.height = els.pdfCanvas.height;
+        state.recordingCanvas.width = state.recordingLayout.canvasWidth;
+        state.recordingCanvas.height = state.recordingLayout.canvasHeight;
         state.recordingContext = state.recordingCanvas.getContext('2d', { alpha: false });
 
         drawRecordingFrame();
         const stream = state.recordingCanvas.captureStream(30);
+        state.recordingStream = stream;
+
+        state.isRecording = true;
+        els.recordButton.textContent = 'Stop Recording';
+        els.recordButton.classList.add('recording');
+        updateControls();
+
+        await mediaUnlockPromise;
+        await countdown();
+        await playMedia({
+            forRecording: true,
+            restart: true,
+            useYoutubeAudioFallback: youtubeAudioFallbackReadyBeforePlayback,
+        });
+
+        if (state.mediaType === 'video-file') {
+            await waitForVideoPlaybackFrame(els.videoPlayer, 1500).catch(() => false);
+            drawRecordingFrame();
+        }
+
         const audioState = await addRecordingAudioTracks(stream);
         const youtubeAudioFallbackReady = audioState.youtubeAudioFallbackReady;
 
         if (!state.hasMedia && audioState.microphoneRequested && !audioState.microphoneReady) {
-            throw new Error('Microphone audio is required when no multimedia source is loaded. Click the Mic selector and grant microphone access first.');
+            stopRecordingFrameLoop();
+            stopRecordingStreamTracks();
+            state.recordingCanvas = null;
+            state.recordingContext = null;
+            state.recordingLayout = null;
+            state.isRecording = false;
+            els.recordButton.textContent = 'Start Recording';
+            els.recordButton.classList.remove('recording');
+            updateControls();
+            showStartPointerRequirementDialog();
+            return;
         }
 
         const mimeType = chooseRecordingMimeType();
@@ -472,14 +592,6 @@ async function startRecording() {
         recorder.addEventListener('stop', saveRecording);
 
         state.mediaRecorder = recorder;
-        state.recordingStream = stream;
-        state.isRecording = true;
-        els.recordButton.textContent = 'Stop Recording';
-        els.recordButton.classList.add('recording');
-        updateControls();
-
-        await countdown();
-        await playMedia({ forRecording: true, restart: true, useYoutubeAudioFallback: youtubeAudioFallbackReady });
         startRecordingFrameLoop();
         recorder.start(1000);
 
@@ -489,18 +601,25 @@ async function startRecording() {
                 ? ' without microphone'
                 : '';
 
-        if (state.mediaType === 'youtube') {
+        if (state.mediaType === 'video-file') {
+            setStatus(audioState.mediaAudioReady
+                ? `Recording PDF viewer, uploaded video, video audio${microphoneStatus}...`
+                : `Recording PDF viewer and uploaded video${microphoneStatus}. No video audio track was captured.`);
+        } else if (state.mediaType === 'youtube') {
             setStatus(youtubeAudioFallbackReady
-                ? `Recording PDF viewer only with YouTube audio fallback${microphoneStatus}...`
-                : `Recording PDF viewer only${microphoneStatus}. YouTube iframe audio cannot be captured without the bundled yt-dlp audio fallback.`);
+                ? `Recording PDF viewer with YouTube audio fallback${microphoneStatus}. YouTube recording is audio-only.`
+                : `Recording PDF viewer only${microphoneStatus}. YouTube audio fallback is unavailable.`);
         } else {
-            setStatus(`Recording PDF viewer only${microphoneStatus}...`);
+            setStatus(`Recording PDF viewer${microphoneStatus}...`);
         }
     } catch (error) {
         stopRecordingFrameLoop();
         stopRecordingStreamTracks();
+        state.recordingCanvas = null;
+        state.recordingContext = null;
+        state.recordingLayout = null;
         state.isRecording = false;
-        els.recordButton.textContent = 'Record';
+        els.recordButton.textContent = 'Start Recording';
         els.recordButton.classList.remove('recording');
         setStatus(`Recording failed: ${error.message}`);
         updateControls();
@@ -511,7 +630,7 @@ async function addRecordingAudioTracks(recordingStream) {
     const audioState = {
         mediaAudioReady: false,
         youtubeAudioFallbackReady: false,
-        microphoneRequested: !els.disableMicrophoneCheckbox.checked,
+        microphoneRequested: isMicrophoneRecordingEnabled(),
         microphoneReady: false,
     };
 
@@ -542,22 +661,22 @@ async function addRecordingAudioTracks(recordingStream) {
 
 async function getMediaAudioStream() {
     if (state.mediaType === 'video-file') {
-        await waitForMediaReady(els.videoPlayer, 3000).catch(() => false);
-        state.mediaAudioCaptureStream = captureAudioStreamFromMediaElement(els.videoPlayer, 'uploaded video');
+        await waitForVideoPlaybackFrame(els.videoPlayer, 1500).catch(() => false);
+        state.mediaAudioCaptureStream = await captureAudioStreamFromMediaElement(els.videoPlayer, 'uploaded video');
         return state.mediaAudioCaptureStream;
     }
 
     if (state.mediaType === 'youtube') {
         const ready = await waitForMediaReady(els.youtubeAudio, 7000).catch(() => false);
         if (!ready) return null;
-        state.youtubeAudioCaptureStream = captureAudioStreamFromMediaElement(els.youtubeAudio, 'YouTube audio fallback');
+        state.youtubeAudioCaptureStream = await captureAudioStreamFromMediaElement(els.youtubeAudio, 'YouTube audio fallback');
         return state.youtubeAudioCaptureStream;
     }
 
     return null;
 }
 
-function captureAudioStreamFromMediaElement(mediaElement, label) {
+async function captureAudioStreamFromMediaElement(mediaElement, label) {
     const captureStream = mediaElement.captureStream || mediaElement.mozCaptureStream;
     if (!captureStream) {
         setStatus(`This browser cannot capture ${label} audio.`);
@@ -565,7 +684,38 @@ function captureAudioStreamFromMediaElement(mediaElement, label) {
     }
 
     const mediaStream = captureStream.call(mediaElement);
+    if (!mediaStream.getAudioTracks().length) {
+        await waitForStreamAudioTrack(mediaStream, 1200).catch(() => false);
+    }
+
     return mediaStream.getAudioTracks().length ? mediaStream : null;
+}
+
+function waitForStreamAudioTrack(mediaStream, timeoutMs) {
+    if (mediaStream.getAudioTracks().length) return Promise.resolve(true);
+
+    return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => cleanup(false), timeoutMs);
+        const onAddTrack = () => cleanup(mediaStream.getAudioTracks().length > 0);
+
+        function cleanup(success) {
+            clearTimeout(timeout);
+            mediaStream.removeEventListener('addtrack', onAddTrack);
+            success ? resolve(true) : reject(new Error('No audio track available'));
+        }
+
+        mediaStream.addEventListener('addtrack', onAddTrack);
+    });
+}
+
+function isMicrophoneRecordingEnabled() {
+    return Boolean(els.enableMicrophoneCheckbox.checked && navigator.mediaDevices?.getUserMedia);
+}
+
+function showStartPointerRequirementDialog() {
+    const message = 'Please enable your microphone or load a Video to start the pointer';
+    window.alert(message);
+    setStatus(message);
 }
 
 function getSelectedMicrophoneConstraints() {
@@ -573,30 +723,113 @@ function getSelectedMicrophoneConstraints() {
     return deviceId ? { deviceId: { exact: deviceId } } : true;
 }
 
-async function requestMicrophoneAccessFromSelector(event) {
-    if (els.disableMicrophoneCheckbox.checked || state.isRecording) return;
+async function onMicrophoneSelectorInteraction() {
+    if (state.isRecording) return;
 
-    if (!navigator.mediaDevices?.getUserMedia) {
-        setStatus('This browser cannot access a microphone.');
+    if (!els.enableMicrophoneCheckbox.checked) {
+        setStatus('Enable microphone first to choose an input device.');
+        return;
+    }
+
+    if (!state.microphonePermissionGranted) {
+        await openMicrophoneSetupDialog();
+        return;
+    }
+
+    await refreshMicrophoneDevices();
+}
+
+async function onEnableMicrophoneChanged() {
+    updateControls();
+
+    if (!els.enableMicrophoneCheckbox.checked) {
+        setStatus(state.hasMedia
+            ? 'Microphone recording disabled. Recording will use only multimedia audio.'
+            : 'Microphone disabled. Load a video or enable microphone to start the pointer.');
+        return;
+    }
+
+    const configured = await openMicrophoneSetupDialog();
+    if (!configured) {
+        els.enableMicrophoneCheckbox.checked = false;
         updateControls();
-        return;
+        setStatus('Microphone recording was not enabled.');
+    }
+}
+
+async function openMicrophoneSetupDialog() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+        window.alert('This browser cannot access a microphone.');
+        setStatus('This browser cannot access a microphone.');
+        return false;
     }
 
-    const shouldBlockNativePicker = !state.microphonePermissionGranted && event?.type === 'pointerdown';
-    if (shouldBlockNativePicker) event.preventDefault();
-
-    if (state.microphonePermissionGranted) {
+    if (!els.microphoneDialog || typeof els.microphoneDialog.showModal !== 'function') {
+        const granted = await requestMicrophonePermission();
+        if (!granted) return false;
         await refreshMicrophoneDevices();
-
-        if (shouldBlockNativePicker && typeof els.microphoneSelect.showPicker === 'function') {
-            setTimeout(() => {
-                try { els.microphoneSelect.showPicker(); } catch (_) { }
-            }, 0);
-        }
-        return;
+        openNativeMicrophonePicker();
+        return true;
     }
 
-    if (state.microphonePermissionPending) return;
+    await refreshMicrophoneDevices();
+    syncDialogMicrophoneOptions();
+    updateMicrophoneDialogMode();
+
+    if (!els.microphoneDialog.open) {
+        els.microphoneDialog.showModal();
+    }
+
+    return new Promise((resolve) => {
+        const cleanup = () => {
+            els.microphoneDialogCancel.removeEventListener('click', onCancel);
+            els.microphoneDialogConfirm.removeEventListener('click', onConfirm);
+            els.microphoneDialog.removeEventListener('cancel', onCancel);
+        };
+
+        const closeWith = (result) => {
+            cleanup();
+            if (els.microphoneDialog.open) els.microphoneDialog.close();
+            resolve(result);
+        };
+
+        const onCancel = (event) => {
+            event?.preventDefault?.();
+            closeWith(false);
+        };
+
+        const onConfirm = async (event) => {
+            event.preventDefault();
+
+            if (!state.microphonePermissionGranted) {
+                els.microphoneDialogConfirm.disabled = true;
+                const granted = await requestMicrophonePermission();
+                els.microphoneDialogConfirm.disabled = false;
+
+                if (!granted) {
+                    updateMicrophoneDialogMode('Microphone permission was not granted. Allow access to enable microphone recording.');
+                    return;
+                }
+
+                await refreshMicrophoneDevices();
+                syncDialogMicrophoneOptions();
+                updateMicrophoneDialogMode('Permission granted. Select the preferred input device and confirm.');
+                return;
+            }
+
+            els.microphoneSelect.value = els.dialogMicrophoneSelect.value;
+            setStatus('Microphone recording enabled.');
+            closeWith(true);
+        };
+
+        els.microphoneDialogCancel.addEventListener('click', onCancel);
+        els.microphoneDialogConfirm.addEventListener('click', onConfirm);
+        els.microphoneDialog.addEventListener('cancel', onCancel);
+    });
+}
+
+async function requestMicrophonePermission() {
+    if (state.microphonePermissionPending) return false;
 
     try {
         state.microphonePermissionPending = true;
@@ -607,34 +840,47 @@ async function requestMicrophoneAccessFromSelector(event) {
 
         state.microphonePermissionRequested = true;
         state.microphonePermissionGranted = true;
-
-        await refreshMicrophoneDevices();
-        setStatus('Microphone access granted. Choose the input device, then record.');
-
-        if (shouldBlockNativePicker && typeof els.microphoneSelect.showPicker === 'function') {
-            setTimeout(() => {
-                try { els.microphoneSelect.showPicker(); } catch (_) { }
-            }, 0);
-        }
+        return true;
     } catch (error) {
         state.microphonePermissionRequested = true;
         state.microphonePermissionGranted = false;
         setStatus(`Microphone access was not granted: ${error.message}`);
+        return false;
     } finally {
         state.microphonePermissionPending = false;
         updateControls();
     }
 }
 
-function onDisableMicrophoneChanged() {
-    updateControls();
+function syncDialogMicrophoneOptions() {
+    const previousValue = els.dialogMicrophoneSelect.value || els.microphoneSelect.value;
+    els.dialogMicrophoneSelect.innerHTML = '';
 
-    if (els.disableMicrophoneCheckbox.checked) {
-        setStatus(state.hasMedia
-            ? 'Microphone recording disabled. Recording will use only multimedia audio.'
-            : 'Microphone recording disabled. Load a video or YouTube link to enable recording audio.');
+    for (const option of els.microphoneSelect.options) {
+        els.dialogMicrophoneSelect.appendChild(new Option(option.textContent, option.value));
+    }
+
+    if ([...els.dialogMicrophoneSelect.options].some(option => option.value === previousValue)) {
+        els.dialogMicrophoneSelect.value = previousValue;
+    }
+}
+
+function updateMicrophoneDialogMode(messageOverride = '') {
+    const hasPermission = state.microphonePermissionGranted;
+    els.dialogMicrophoneSelect.disabled = !hasPermission;
+    els.microphoneDialogConfirm.textContent = hasPermission ? 'Use selected microphone' : 'Allow microphone access';
+    els.microphoneDialogMessage.textContent = messageOverride || (hasPermission
+        ? 'Select the preferred microphone input for the recording.'
+        : 'The browser will ask for microphone permission. After granting access, you can select the preferred input device.');
+}
+
+function openNativeMicrophonePicker() {
+    if (typeof els.microphoneSelect.showPicker === 'function') {
+        setTimeout(() => {
+            try { els.microphoneSelect.showPicker(); } catch (_) { }
+        }, 0);
     } else {
-        setStatus('Microphone recording enabled. Click the Mic selector to grant access or choose an input device.');
+        els.microphoneSelect.focus();
     }
 }
 
@@ -645,7 +891,7 @@ async function getSelectedMicrophoneStream() {
     }
 
     if (!state.microphonePermissionGranted) {
-        setStatus('Click the Mic selector and grant microphone access before recording with microphone audio.');
+        setStatus('Enable microphone and grant access before recording with microphone audio.');
         return null;
     }
 
@@ -698,14 +944,90 @@ function waitForMediaReady(mediaElement, timeoutMs) {
             clearTimeout(timeout);
             mediaElement.removeEventListener('loadedmetadata', onReady);
             mediaElement.removeEventListener('canplay', onReady);
+            mediaElement.removeEventListener('loadeddata', onReady);
             mediaElement.removeEventListener('error', onError);
             success ? resolve(true) : reject(new Error('Media not ready'));
         }
 
         mediaElement.addEventListener('loadedmetadata', onReady, { once: true });
+        mediaElement.addEventListener('loadeddata', onReady, { once: true });
         mediaElement.addEventListener('canplay', onReady, { once: true });
         mediaElement.addEventListener('error', onError, { once: true });
         mediaElement.load();
+    });
+}
+
+function waitForMediaMetadata(mediaElement, timeoutMs) {
+    if (mediaElement.readyState >= HTMLMediaElement.HAVE_METADATA
+        && Number.isFinite(mediaElement.videoWidth)
+        && Number.isFinite(mediaElement.videoHeight)) {
+        return Promise.resolve(true);
+    }
+
+    return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => cleanup(false), timeoutMs);
+        const onReady = () => cleanup(true);
+        const onError = () => cleanup(false);
+
+        function cleanup(success) {
+            clearTimeout(timeout);
+            mediaElement.removeEventListener('loadedmetadata', onReady);
+            mediaElement.removeEventListener('durationchange', onReady);
+            mediaElement.removeEventListener('error', onError);
+            success ? resolve(true) : reject(new Error('Media metadata not ready'));
+        }
+
+        mediaElement.addEventListener('loadedmetadata', onReady, { once: true });
+        mediaElement.addEventListener('durationchange', onReady, { once: true });
+        mediaElement.addEventListener('error', onError, { once: true });
+        mediaElement.load();
+    });
+}
+
+async function ensureUploadedVideoMetadataReady() {
+    if (state.mediaType !== 'video-file') return false;
+
+    // Do not make the visual video area depend on metadata timing. Some browsers
+    // delay videoWidth/videoHeight until playback starts; in that case we still
+    // reserve a picture-in-picture video box and draw the real frames as soon as
+    // they become available.
+    await waitForMediaMetadata(els.videoPlayer, 2500).catch(() => false);
+    return true;
+}
+
+function waitForVideoPlaybackFrame(videoElement, timeoutMs) {
+    if (videoElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && videoElement.videoWidth > 0) {
+        return Promise.resolve(true);
+    }
+
+    return new Promise((resolve, reject) => {
+        let done = false;
+        const timeout = setTimeout(() => cleanup(false), timeoutMs);
+
+        const finish = () => cleanup(true);
+        const fail = () => cleanup(false);
+
+        function cleanup(success) {
+            if (done) return;
+            done = true;
+            clearTimeout(timeout);
+            videoElement.removeEventListener('loadeddata', finish);
+            videoElement.removeEventListener('canplay', finish);
+            videoElement.removeEventListener('playing', finish);
+            videoElement.removeEventListener('timeupdate', finish);
+            videoElement.removeEventListener('error', fail);
+            success ? resolve(true) : reject(new Error('Video frame not ready'));
+        }
+
+        if (typeof videoElement.requestVideoFrameCallback === 'function') {
+            videoElement.requestVideoFrameCallback(() => cleanup(true));
+        }
+
+        videoElement.addEventListener('loadeddata', finish, { once: true });
+        videoElement.addEventListener('canplay', finish, { once: true });
+        videoElement.addEventListener('playing', finish, { once: true });
+        videoElement.addEventListener('timeupdate', finish, { once: true });
+        videoElement.addEventListener('error', fail, { once: true });
     });
 }
 
@@ -724,26 +1046,124 @@ function stopRecordingFrameLoop() {
     }
 }
 
+function createRecordingLayout(includeUploadedVideo = false) {
+    const pdfWidth = els.pdfCanvas.width;
+    const pdfHeight = els.pdfCanvas.height;
+    const hasUploadedVideo = includeUploadedVideo && state.mediaType === 'video-file';
+
+    const layout = {
+        canvasWidth: hasUploadedVideo ? pdfWidth * 2 : pdfWidth,
+        canvasHeight: pdfHeight,
+        pdfX: 0,
+        pdfY: 0,
+        pdfWidth,
+        pdfHeight,
+        videoRect: null,
+    };
+
+    if (!hasUploadedVideo) return layout;
+
+    const margin = Math.max(20, Math.round(Math.min(pdfWidth, pdfHeight) * 0.035));
+    layout.videoRect = {
+        x: pdfWidth + margin,
+        y: margin,
+        width: pdfWidth - margin * 2,
+        height: pdfHeight - margin * 2,
+    };
+
+    return layout;
+}
+
+function getRecordingLayout() {
+    return state.recordingLayout || createRecordingLayout(false);
+}
+
 function drawRecordingFrame() {
     if (!state.recordingContext || !state.recordingCanvas) return;
 
-    const source = els.pdfCanvas;
-    if (state.recordingCanvas.width !== source.width || state.recordingCanvas.height !== source.height) {
-        state.recordingCanvas.width = source.width;
-        state.recordingCanvas.height = source.height;
+    const layout = getRecordingLayout();
+    if (state.recordingCanvas.width !== layout.canvasWidth || state.recordingCanvas.height !== layout.canvasHeight) {
+        state.recordingCanvas.width = layout.canvasWidth;
+        state.recordingCanvas.height = layout.canvasHeight;
     }
 
     const ctx = state.recordingContext;
-    ctx.drawImage(source, 0, 0, state.recordingCanvas.width, state.recordingCanvas.height);
-    drawRecordedHighlight(ctx);
+    ctx.save();
+    ctx.fillStyle = '#111317';
+    ctx.fillRect(0, 0, state.recordingCanvas.width, state.recordingCanvas.height);
+    ctx.restore();
+
+    ctx.drawImage(els.pdfCanvas, layout.pdfX, layout.pdfY, layout.pdfWidth, layout.pdfHeight);
+    drawRecordedHighlight(ctx, layout);
+    drawRecordedVideo(ctx, layout);
 }
 
-function drawRecordedHighlight(ctx) {
+function drawRecordedVideo(ctx, layout) {
+    if (!layout.videoRect || state.mediaType !== 'video-file') return;
+
+    const { x, y, width, height } = layout.videoRect;
+    ctx.save();
+    ctx.fillStyle = '#000';
+    ctx.fillRect(x, y, width, height);
+
+    if (isUploadedVideoDrawable()) {
+        try {
+            drawVideoContain(ctx, els.videoPlayer, x, y, width, height);
+        } catch (_) {
+            drawCenteredText(ctx, 'Video frame unavailable', x, y, width, height);
+        }
+    } else {
+        drawCenteredText(ctx, 'Loading video...', x, y, width, height);
+    }
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.42)';
+    ctx.lineWidth = Math.max(2, Math.round(width * 0.006));
+    ctx.strokeRect(x, y, width, height);
+    ctx.restore();
+}
+
+function isUploadedVideoDrawable() {
+    return state.mediaType === 'video-file'
+        && els.videoPlayer.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+        && els.videoPlayer.videoWidth > 0
+        && els.videoPlayer.videoHeight > 0;
+}
+
+function drawVideoContain(ctx, videoElement, x, y, width, height) {
+    const sourceAspect = videoElement.videoWidth / videoElement.videoHeight;
+    const targetAspect = width / height;
+    let drawWidth = width;
+    let drawHeight = height;
+    let drawX = x;
+    let drawY = y;
+
+    if (sourceAspect > targetAspect) {
+        drawHeight = Math.round(width / sourceAspect);
+        drawY = y + Math.round((height - drawHeight) / 2);
+    } else {
+        drawWidth = Math.round(height * sourceAspect);
+        drawX = x + Math.round((width - drawWidth) / 2);
+    }
+
+    ctx.drawImage(videoElement, drawX, drawY, drawWidth, drawHeight);
+}
+
+function drawCenteredText(ctx, text, x, y, width, height) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.82)';
+    ctx.font = `${Math.max(18, Math.round(width * 0.045))}px system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x + width / 2, y + height / 2);
+    ctx.restore();
+}
+
+function drawRecordedHighlight(ctx, layout) {
     const marker = state.lastHighlightByPage.get(state.currentPage);
     if (!marker) return;
 
-    const x = marker.displayX * state.canvasScaleX;
-    const y = marker.displayY * state.canvasScaleY;
+    const x = layout.pdfX + marker.displayX * state.canvasScaleX;
+    const y = layout.pdfY + marker.displayY * state.canvasScaleY;
     const radiusX = marker.radiusX * state.canvasScaleX;
     const radiusY = marker.radiusY * state.canvasScaleY;
 
@@ -795,7 +1215,7 @@ async function stopRecording() {
     }
     stopRecordingStreamTracks();
     state.isRecording = false;
-    els.recordButton.textContent = 'Record';
+    els.recordButton.textContent = 'Start Recording';
     els.recordButton.classList.remove('recording');
     updateControls();
     setStatus('Preparing recorded file...');
@@ -824,6 +1244,7 @@ function stopRecordingStreamTracks() {
         state.recordingAudioContext.close().catch(() => { });
         state.recordingAudioContext = null;
     }
+    state.recordingLayout = null;
 }
 
 async function refreshMicrophoneDevices() {
@@ -860,11 +1281,11 @@ function updateMicrophoneControls() {
     const microphoneSupported = Boolean(navigator.mediaDevices?.getUserMedia);
 
     if (!microphoneSupported) {
-        els.disableMicrophoneCheckbox.checked = true;
+        els.enableMicrophoneCheckbox.checked = false;
     }
 
-    els.microphoneSelect.disabled = els.disableMicrophoneCheckbox.checked || !microphoneSupported || state.isRecording;
-    els.disableMicrophoneCheckbox.disabled = !microphoneSupported || state.isRecording;
+    els.microphoneSelect.disabled = !els.enableMicrophoneCheckbox.checked || !microphoneSupported || state.isRecording;
+    els.enableMicrophoneCheckbox.disabled = !microphoneSupported || state.isRecording;
 }
 
 function chooseRecordingMimeType() {
@@ -923,6 +1344,7 @@ async function saveRecording() {
     } finally {
         state.recordingCanvas = null;
         state.recordingContext = null;
+        state.recordingLayout = null;
     }
 }
 
@@ -942,5 +1364,6 @@ function setStatus(message) {
 }
 
 refreshMicrophoneDevices();
+updateMediaLayout();
 updateMicrophoneControls();
 updateControls();
