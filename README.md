@@ -117,7 +117,7 @@ The web version uses the browser `MediaRecorder` and `HTMLCanvasElement.captureS
 
 When you press **Start Recording**, the app records an internal canvas composition. If a local video file is loaded, the composition includes the PDF page plus the uploaded video frame side-by-side. It does not use browser screen sharing, so the exported video excludes the top toolbar, page controls, media player controls, and microphone setup controls.
 
-The recording format depends on the browser. Most browsers generate `.webm`. Some browsers may support `.mp4`.
+The app now asks `MediaRecorder` for MP4 first for better device compatibility. If the browser does not support MP4 recording, it falls back to WebM because renaming WebM as MP4 would create an invalid file.
 
 By default, microphone recording is disabled. Check **Enable microphone** next to **Start Recording** to open the setup dialog. The dialog requests browser microphone permission when needed and then lets you select the preferred input device. If browser labels appear as generic names like `Microphone 1`, grant microphone permission and the list is refreshed.
 
@@ -147,3 +147,37 @@ This keeps the Spring Boot app small. If you need a fully offline build, bundle 
 - YouTube iframe video/audio cannot be directly captured by the browser. YouTube recording uses the backend audio-only fallback through the Maven-bundled `yt-dlp` binary.
 - The YouTube fallback records audio only; it does not add the YouTube video image to the exported recording.
 - The highlight is intentionally approximate for the MVP: it uses a radial ellipse instead of measure detection.
+
+
+## Mobile behavior
+
+On phones, the multimedia preview is kept as a very small center-bottom player so audio playback remains available while the score stays as large and tappable as possible. Local uploaded video is still included in the recording on the right side of the PDF, just like the desktop layout. YouTube remains audio-only in the recording because the iframe video cannot be captured by the browser.
+
+On small phones, the YouTube URL field and **Load YouTube** button move to a second toolbar row so they remain accessible.
+
+Mobile also shows small floating previous/next page buttons on the left and right edges of the score viewer.
+
+
+### Small-screen microphone controls
+
+On smaller devices, the microphone controls stay visible in a third toolbar row instead of being hidden. This keeps **Enable microphone** available on phones while preserving the YouTube URL row.
+
+
+## iPad / tablet fixes
+
+- The **Enable microphone** checkbox stays tappable. If iPad/Safari blocks microphone APIs because the app is opened through plain HTTP from another device, the app now shows a clear HTTPS/localhost message instead of silently disabling the control.
+- Local video audio has a Safari/iPad fallback: if `HTMLMediaElement.captureStream()` is unavailable, the app uses Web Audio to mix the video element audio into the recording.
+- The small mobile/tablet video preview uses `dvh` and safe-area spacing so it does not fall below the visible screen.
+- The YouTube audio backend now treats browser-cancelled streams as normal client aborts and stops `yt-dlp` cleanly, avoiding noisy stack traces such as “Se ha anulado una conexión establecida...”.
+
+
+## Draggable video preview
+
+The visible media preview can be moved with the **Drag preview** handle above the video. Dragging works with mouse and touch, and the preview is constrained inside the viewer area. Double-click the handle to reset it to the default position.
+
+This drag position is **UI-only**. The exported recording keeps the normal recording layout for the video and is not affected by where the user moves the preview on screen.
+
+
+### Dragging while recording
+
+The visible preview can now be dragged even while recording is active. This still affects only the on-screen preview; the exported recording keeps the fixed recording video placement.

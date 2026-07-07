@@ -296,14 +296,87 @@ body {
     :root { --media-width: min(520px, calc(50vw - 28px)); }
 }
 
-@media (max-width: 700px) {
-    .microphone-controls { display: none; }
+.mobile-page-button {
+    display: none;
 }
 
-@media (max-width: 640px) {
-    .youtube-loader { display: none; }
+@media (max-width: 900px) {
+    .media-panel {
+        left: 50%;
+        top: auto;
+        bottom: 64px;
+        width: min(180px, 44vw);
+        transform: translateX(-50%);
+        z-index: 35;
+    }
+
+    .media-shell {
+        border-radius: 12px;
+        padding: 5px;
+    }
+
+    .media-view {
+        border-radius: 8px;
+    }
+
+    .mini-controls {
+        gap: 4px;
+        margin-top: 4px;
+    }
+
+    .mini-controls button {
+        padding: 4px 7px;
+        font-size: 11px;
+        border-radius: 8px;
+    }
+
+    .mobile-page-button {
+        position: absolute;
+        display: grid;
+        place-items: center;
+        top: calc(50% - 20px);
+        width: 34px;
+        height: 52px;
+        padding: 0;
+        border-radius: 999px;
+        z-index: 40;
+        font-size: 34px;
+        line-height: 1;
+        background: rgba(0,0,0,0.34);
+        border-color: rgba(255,255,255,0.24);
+        backdrop-filter: blur(6px);
+    }
+
+    .mobile-page-button-left {
+        left: 6px;
+    }
+
+    .mobile-page-button-right {
+        right: 6px;
+    }
+
+    .mobile-page-button:disabled {
+        opacity: 0.18;
+    }
 }
 
+@media (max-width: 420px) {
+    .media-panel {
+        bottom: 60px;
+        width: min(150px, 42vw);
+    }
+
+    .mini-controls button {
+        padding: 3px 5px;
+        font-size: 10px;
+    }
+
+    .mobile-page-button {
+        width: 30px;
+        height: 46px;
+        font-size: 30px;
+    }
+}
 
 .microphone-dialog {
     width: min(460px, calc(100vw - 32px));
@@ -350,4 +423,196 @@ body {
     justify-content: flex-end;
     gap: 10px;
     margin-top: 4px;
+}
+
+
+@media (max-width: 640px) {
+    :root {
+        --toolbar-height: 156px;
+    }
+
+    .toolbar {
+        height: var(--toolbar-height);
+        flex-wrap: wrap;
+        align-content: center;
+        align-items: center;
+        gap: 8px;
+        padding: 8px;
+    }
+
+    .toolbar > .button,
+    .toolbar > button {
+        flex: 0 0 auto;
+    }
+
+    .youtube-loader {
+        order: 20;
+        display: flex;
+        flex: 1 0 100%;
+        width: 100%;
+        max-width: none;
+        min-width: 0;
+    }
+
+    .microphone-controls {
+        order: 30;
+        display: flex;
+        flex: 1 0 100%;
+        width: 100%;
+        max-width: none;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    .microphone-label {
+        display: inline;
+    }
+
+    #microphoneSelect {
+        width: min(190px, 48vw);
+    }
+
+    .microphone-enable span {
+        max-width: none;
+        overflow: visible;
+        text-overflow: clip;
+    }
+
+    #youtubeUrlInput {
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    #loadYoutubeButton {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+}
+
+@media (max-width: 420px) {
+    :root {
+        --toolbar-height: 164px;
+    }
+
+    .button, button {
+        padding: 7px 8px;
+        font-size: 12px;
+    }
+
+    .youtube-loader {
+        gap: 6px;
+    }
+
+    .microphone-controls {
+        gap: 6px;
+        font-size: 12px;
+    }
+
+    #microphoneSelect {
+        width: min(170px, 46vw);
+        padding: 7px 8px;
+        font-size: 12px;
+    }
+
+    #youtubeUrlInput {
+        padding: 8px 9px;
+        font-size: 13px;
+    }
+}
+
+
+/* iPad/tablet fixes */
+.stage {
+    height: calc(100dvh - var(--toolbar-height));
+}
+
+.canvas-wrap,
+#pdfCanvas {
+    max-height: calc(100dvh - var(--toolbar-height) - 54px);
+}
+
+.microphone-enable {
+    min-height: 36px;
+    padding: 4px 6px;
+    border-radius: 10px;
+}
+
+.microphone-enable input {
+    width: 18px;
+    height: 18px;
+}
+
+@media (max-width: 900px) {
+    .media-panel {
+        bottom: calc(82px + env(safe-area-inset-bottom, 0px));
+        width: min(160px, 40vw);
+        max-height: calc(100dvh - var(--toolbar-height) - 120px);
+    }
+
+    .media-view {
+        max-height: calc(100dvh - var(--toolbar-height) - 170px);
+    }
+
+    .mini-controls {
+        flex-wrap: nowrap;
+    }
+
+    .mini-controls button {
+        padding: 3px 6px;
+        font-size: 10px;
+    }
+}
+
+@media (max-width: 420px) {
+    .media-panel {
+        bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+        width: min(140px, 40vw);
+    }
+}
+
+
+/* Draggable media preview. This affects only the on-screen preview, not the recording layout. */
+.media-shell {
+    position: relative;
+}
+
+.media-drag-handle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 26px;
+    padding: 4px 8px;
+    margin: 0 0 6px 0;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.08);
+    color: var(--muted);
+    font-size: 12px;
+    cursor: grab;
+    touch-action: none;
+}
+
+.media-drag-handle:active,
+.media-dragging .media-drag-handle {
+    cursor: grabbing;
+    background: rgba(255,255,255,0.16);
+    color: var(--text);
+}
+
+.media-panel.media-dragged {
+    position: absolute;
+    z-index: 45;
+}
+
+.media-panel.media-dragging {
+    user-select: none;
+}
+
+@media (max-width: 900px) {
+    .media-drag-handle {
+        min-height: 22px;
+        padding: 2px 6px;
+        margin-bottom: 3px;
+        font-size: 10px;
+    }
 }

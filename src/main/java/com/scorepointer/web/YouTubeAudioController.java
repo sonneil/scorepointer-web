@@ -50,7 +50,22 @@ public class YouTubeAudioController {
 
         StreamingResponseBody body = outputStream -> {
             try (InputStream inputStream = process.getInputStream()) {
-                inputStream.transferTo(outputStream);
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    try {
+                        outputStream.write(buffer, 0, bytesRead);
+                    } catch (IOException writeError) {
+                        if (isClientAbort(writeError)) {
+                            return;
+                        }
+                        throw writeError;
+                    }
+                }
+            } catch (IOException streamError) {
+                if (!isClientAbort(streamError)) {
+                    throw streamError;
+                }
             } finally {
                 stopProcess(process);
             }
@@ -126,6 +141,27 @@ public class YouTubeAudioController {
             Thread.currentThread().interrupt();
             process.destroyForcibly();
         }
+    }
+
+    private boolean isClientAbort(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            String className = current.getClass().getName().toLowerCase(Locale.ROOT);
+            String message = current.getMessage() == null ? "" : current.getMessage().toLowerCase(Locale.ROOT);
+
+            if (className.contains("clientabort")
+                    || message.contains("broken pipe")
+                    || message.contains("connection reset")
+                    || message.contains("connection aborted")
+                    || message.contains("an established connection was aborted")
+                    || message.contains("se ha anulado una conexión")
+                    || message.contains("software en su equipo host")) {
+                return true;
+            }
+
+            current = current.getCause();
+        }
+        return false;
     }
 
     private static final class OutputStreamDiscard extends java.io.OutputStream {

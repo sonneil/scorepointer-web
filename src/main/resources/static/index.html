@@ -57,6 +57,9 @@
 
         <section id="mediaPanel" class="media-panel hidden">
             <div class="media-shell">
+                <button id="mediaDragHandle" class="media-drag-handle" type="button" title="Drag preview" aria-label="Drag preview">
+                    <span>Drag preview</span>
+                </button>
                 <video id="videoPlayer" class="media-view hidden" controls playsinline preload="auto"></video>
                 <iframe id="youtubePlayer" class="media-view hidden" title="YouTube player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
                 <audio id="youtubeAudio" class="hidden" preload="auto" crossorigin="anonymous"></audio>
@@ -67,6 +70,9 @@
                 </div>
             </div>
         </section>
+
+        <button id="floatingPreviousPageButton" class="mobile-page-button mobile-page-button-left" type="button" title="Previous page" aria-label="Previous page">‹</button>
+        <button id="floatingNextPageButton" class="mobile-page-button mobile-page-button-right" type="button" title="Next page" aria-label="Next page">›</button>
 
         <dialog id="microphoneDialog" class="microphone-dialog">
             <form id="microphoneDialogForm" class="microphone-dialog-card" method="dialog">
