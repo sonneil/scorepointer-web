@@ -181,3 +181,58 @@ This drag position is **UI-only**. The exported recording keeps the normal recor
 ### Dragging while recording
 
 The visible preview can now be dragged even while recording is active. This still affects only the on-screen preview; the exported recording keeps the fixed recording video placement.
+
+
+## Recording download reliability
+
+When a recording finishes, the app now creates a persistent browser Blob URL and shows a **Recording ready** dialog with:
+
+- **Download recording**: explicit download link using the generated filename.
+- **Open recording**: opens the Blob URL directly, useful on iPad/Safari where automatic Blob downloads may be blocked or opened instead of saved.
+
+The backend will not show errors for this because recording and download are client-side browser operations.
+
+
+## YouTube audio on AWS with yt-dlp cookies
+
+The backend can now pass optional configuration to `yt-dlp` through Spring Boot properties or environment variables.
+
+Recommended EC2 systemd override:
+
+```ini
+[Service]
+Environment=HOME=/home/ubuntu
+Environment=PATH=/home/ubuntu/.deno/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=SCOREPOINTER_YTDLP_COMMAND=/home/ubuntu/.local/bin/yt-dlp
+Environment=SCOREPOINTER_YTDLP_COOKIES_FILE=/opt/sheetmusicpointer/secrets/youtube-cookies.txt
+Environment=SCOREPOINTER_YTDLP_REMOTE_COMPONENTS=ejs:github
+```
+
+Apply with:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart sheetmusicpointer
+```
+
+The Java controller now adds these `yt-dlp` args when configured:
+
+```bash
+--cookies /opt/sheetmusicpointer/secrets/youtube-cookies.txt
+--remote-components ejs:github
+```
+
+It also logs `yt-dlp` stderr to the application logs, so YouTube errors such as bot checks, missing formats, or JS challenge failures are visible with:
+
+```bash
+sudo journalctl -u sheetmusicpointer -f
+```
+
+Keep `youtube-cookies.txt` out of git and treat it like a password.
+
+
+## Media readiness before recording
+
+Recording startup now waits for the selected media element to reach a playable ready state before beginning the countdown/capture path.
+
+For YouTube audio fallback, the previous fixed 7-second wait was removed. The app now waits until the fallback audio element has real current media data, or until the browser reports a media error. This avoids starting a recording before a slower `yt-dlp` stream is actually ready.

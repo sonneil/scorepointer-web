@@ -40,6 +40,7 @@ const state = {
         offsetX: 0,
         offsetY: 0,
     },
+    lastRecordingObjectUrl: null,
     lastHighlightByPage: new Map(),
 };
 
@@ -90,6 +91,11 @@ const els = {
     dialogMicrophoneSelect: document.getElementById('dialogMicrophoneSelect'),
     microphoneDialogCancel: document.getElementById('microphoneDialogCancel'),
     microphoneDialogConfirm: document.getElementById('microphoneDialogConfirm'),
+    recordingDownloadDialog: document.getElementById('recordingDownloadDialog'),
+    recordingDownloadMessage: document.getElementById('recordingDownloadMessage'),
+    recordingDownloadLink: document.getElementById('recordingDownloadLink'),
+    recordingOpenLink: document.getElementById('recordingOpenLink'),
+    recordingDownloadClose: document.getElementById('recordingDownloadClose'),
 };
 
 els.pdfInput.addEventListener('change', loadPdf);
@@ -106,6 +112,7 @@ els.microphoneSelect.addEventListener('focus', onMicrophoneSelectorInteraction);
 els.microphoneSelect.addEventListener('pointerdown', onMicrophoneSelectorInteraction);
 els.microphoneSelect.addEventListener('click', onMicrophoneSelectorInteraction);
 els.enableMicrophoneCheckbox.addEventListener('change', onEnableMicrophoneChanged);
+els.recordingDownloadClose.addEventListener('click', () => els.recordingDownloadDialog?.close?.());
 els.playButton.addEventListener('click', () => playMedia());
 els.pauseButton.addEventListener('click', pauseMedia);
 els.stopButton.addEventListener('click', stopMedia);
@@ -527,7 +534,15 @@ async function playMedia(options = {}) {
 
     if (state.mediaType === 'video-file') {
         if (options.restart) safeSetCurrentTime(els.videoPlayer, 0);
-        await els.videoPlayer.play().catch(() => setStatus('Browser blocked video playback. Press Play inside the media element.'));
+        try {
+            await els.videoPlayer.play();
+            await waitForMediaReady(els.videoPlayer, 0, {
+                minReadyState: HTMLMediaElement.HAVE_CURRENT_DATA,
+                callLoad: false,
+            });
+        } catch (_) {
+            setStatus('Browser blocked video playback or video is not ready. Press Play inside the media element.');
+        }
         return;
     }
 
@@ -563,6 +578,10 @@ async function unlockMediaPlaybackForRecording() {
             safeSetCurrentTime(els.videoPlayer, 0);
             els.videoPlayer.volume = 0;
             await els.videoPlayer.play();
+            await waitForMediaReady(els.videoPlayer, 800, {
+                minReadyState: HTMLMediaElement.HAVE_CURRENT_DATA,
+                callLoad: false,
+            }).catch(() => false);
             await waitForVideoPlaybackFrame(els.videoPlayer, 800).catch(() => false);
         } catch (_) {
             // The final play attempt after the countdown will show the user-facing status if blocked.
@@ -632,6 +651,24 @@ async function onRecordButton() {
     }
 }
 
+async function waitForYouTubeAudioFallbackForRecording() {
+    if (state.mediaType !== 'youtube') return false;
+
+    setStatus('Preparing YouTube audio fallback. Recording will start when the audio stream is ready...');
+    safeSetCurrentTime(els.youtubeAudio, 0);
+
+    try {
+        await waitForMediaReady(els.youtubeAudio, 0, {
+            minReadyState: HTMLMediaElement.HAVE_CURRENT_DATA,
+            callLoad: true,
+        });
+        return true;
+    } catch (error) {
+        setStatus(`YouTube audio fallback is unavailable: ${error.message}. The visible YouTube player may play, but its audio cannot be captured by the recording.`);
+        return false;
+    }
+}
+
 async function startRecording() {
     if (!HTMLCanvasElement.prototype.captureStream) {
         setStatus('This browser does not support canvas recording. Try Chrome, Edge, or Brave.');
@@ -668,7 +705,7 @@ async function startRecording() {
             ? await ensureUploadedVideoMetadataReady()
             : false;
         const youtubeAudioFallbackReadyBeforePlayback = state.mediaType === 'youtube'
-            ? await waitForMediaReady(els.youtubeAudio, 7000).catch(() => false)
+            ? await waitForYouTubeAudioFallbackForRecording()
             : false;
 
         state.recordingLayout = createRecordingLayout(includeUploadedVideo);
@@ -814,7 +851,10 @@ async function getMediaAudioStream() {
     }
 
     if (state.mediaType === 'youtube') {
-        const ready = await waitForMediaReady(els.youtubeAudio, 7000).catch(() => false);
+        const ready = await waitForMediaReady(els.youtubeAudio, 0, {
+            minReadyState: HTMLMediaElement.HAVE_CURRENT_DATA,
+            callLoad: false,
+        }).catch(() => false);
         if (!ready) return null;
         state.youtubeAudioCaptureStream = await captureAudioStreamFromMediaElement(els.youtubeAudio, 'YouTube audio fallback');
         return state.youtubeAudioCaptureStream;
@@ -1124,29 +1164,71 @@ function ensureRecordingAudioContext() {
     return state.recordingAudioContext;
 }
 
-function waitForMediaReady(mediaElement, timeoutMs) {
-    if (mediaElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return Promise.resolve(true);
+function waitForMediaReady(mediaElement, timeoutMs = 0, options = {}) {
+    const minReadyState = options.minReadyState ?? HTMLMediaElement.HAVE_CURRENT_DATA;
+    const shouldCallLoad = options.callLoad !== false;
+
+    if (mediaElement.readyState >= minReadyState) return Promise.resolve(true);
 
     return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => cleanup(false), timeoutMs);
-        const onReady = () => cleanup(true);
-        const onError = () => cleanup(false);
+        let done = false;
+        const timeout = Number.isFinite(timeoutMs) && timeoutMs > 0
+            ? setTimeout(() => cleanup(false, new Error('Media not ready before timeout')), timeoutMs)
+            : null;
 
-        function cleanup(success) {
-            clearTimeout(timeout);
-            mediaElement.removeEventListener('loadedmetadata', onReady);
-            mediaElement.removeEventListener('canplay', onReady);
-            mediaElement.removeEventListener('loadeddata', onReady);
+        const onMaybeReady = () => {
+            if (mediaElement.readyState >= minReadyState) {
+                cleanup(true);
+            }
+        };
+        const onError = () => cleanup(false, getMediaElementError(mediaElement));
+
+        function cleanup(success, error = null) {
+            if (done) return;
+            done = true;
+            if (timeout) clearTimeout(timeout);
+
+            mediaElement.removeEventListener('loadedmetadata', onMaybeReady);
+            mediaElement.removeEventListener('durationchange', onMaybeReady);
+            mediaElement.removeEventListener('loadeddata', onMaybeReady);
+            mediaElement.removeEventListener('canplay', onMaybeReady);
+            mediaElement.removeEventListener('canplaythrough', onMaybeReady);
+            mediaElement.removeEventListener('playing', onMaybeReady);
+            mediaElement.removeEventListener('progress', onMaybeReady);
             mediaElement.removeEventListener('error', onError);
-            success ? resolve(true) : reject(new Error('Media not ready'));
+
+            success ? resolve(true) : reject(error || new Error('Media not ready'));
         }
 
-        mediaElement.addEventListener('loadedmetadata', onReady, { once: true });
-        mediaElement.addEventListener('loadeddata', onReady, { once: true });
-        mediaElement.addEventListener('canplay', onReady, { once: true });
+        mediaElement.addEventListener('loadedmetadata', onMaybeReady);
+        mediaElement.addEventListener('durationchange', onMaybeReady);
+        mediaElement.addEventListener('loadeddata', onMaybeReady);
+        mediaElement.addEventListener('canplay', onMaybeReady);
+        mediaElement.addEventListener('canplaythrough', onMaybeReady);
+        mediaElement.addEventListener('playing', onMaybeReady);
+        mediaElement.addEventListener('progress', onMaybeReady);
         mediaElement.addEventListener('error', onError, { once: true });
-        mediaElement.load();
+
+        if (shouldCallLoad && mediaElement.networkState === HTMLMediaElement.NETWORK_EMPTY) {
+            mediaElement.load();
+        }
+
+        onMaybeReady();
     });
+}
+
+function getMediaElementError(mediaElement) {
+    const error = mediaElement.error;
+    if (!error) return new Error('Media failed to load');
+
+    const errorNames = {
+        [MediaError.MEDIA_ERR_ABORTED]: 'Media loading was aborted',
+        [MediaError.MEDIA_ERR_NETWORK]: 'Network error while loading media',
+        [MediaError.MEDIA_ERR_DECODE]: 'Media decode error',
+        [MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED]: 'Media source is not supported',
+    };
+
+    return new Error(errorNames[error.code] || `Media error ${error.code}`);
 }
 
 function waitForMediaMetadata(mediaElement, timeoutMs) {
@@ -1513,34 +1595,11 @@ async function saveRecording() {
     const type = state.mediaRecorder?.mimeType || 'video/webm';
     const isMp4 = type.toLowerCase().includes('mp4');
     const extension = isMp4 ? 'mp4' : 'webm';
-    const pickerMimeType = isMp4 ? 'video/mp4' : 'video/webm';
     const blob = new Blob(state.recordedChunks, { type });
-    const defaultName = `scorepointer-pdf-viewer-recording-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.${extension}`;
+    const defaultName = `scorepointer-recording-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.${extension}`;
 
     try {
-        if ('showSaveFilePicker' in window) {
-            const handle = await window.showSaveFilePicker({
-                suggestedName: defaultName,
-                types: [{
-                    description: extension.toUpperCase() + ' video',
-                    accept: { [pickerMimeType]: [`.${extension}`] },
-                }],
-            });
-            const writable = await handle.createWritable();
-            await writable.write(blob);
-            await writable.close();
-            setStatus(`Recording saved as ${handle.name}`);
-        } else {
-            downloadBlob(blob, defaultName);
-            setStatus('Recording downloaded. Your browser may ask where to save it depending on settings.');
-        }
-    } catch (error) {
-        if (error.name !== 'AbortError') {
-            downloadBlob(blob, defaultName);
-            setStatus(`Save picker failed. Downloaded instead: ${error.message}`);
-        } else {
-            setStatus('Save cancelled. Recording kept only until page refresh.');
-        }
+        presentRecordingDownload(blob, defaultName, type);
     } finally {
         state.recordingCanvas = null;
         state.recordingContext = null;
@@ -1548,15 +1607,63 @@ async function saveRecording() {
     }
 }
 
-function downloadBlob(blob, filename) {
+function presentRecordingDownload(blob, filename, type) {
+    if (state.lastRecordingObjectUrl) {
+        URL.revokeObjectURL(state.lastRecordingObjectUrl);
+    }
+
     const url = URL.createObjectURL(blob);
+    state.lastRecordingObjectUrl = url;
+
+    configureRecordingDownloadLinks(url, filename, blob, type);
+    triggerRecordingDownload(url, filename);
+    showRecordingDownloadDialog();
+
+    const sizeMb = (blob.size / (1024 * 1024)).toFixed(1);
+    setStatus(`Recording ready: ${filename} (${sizeMb} MB). Use the download dialog if your browser blocked the automatic download.`);
+}
+
+function configureRecordingDownloadLinks(url, filename, blob, type) {
+    const extension = filename.split('.').pop()?.toUpperCase() || 'VIDEO';
+    const sizeMb = (blob.size / (1024 * 1024)).toFixed(1);
+    const actualType = type || blob.type || 'unknown video type';
+
+    els.recordingDownloadMessage.textContent = `Your ${extension} recording is ready (${sizeMb} MB, ${actualType}). If the automatic download did not start, use Download recording. On iPad/Safari, use Open recording and then Share/Save to Files if needed.`;
+
+    els.recordingDownloadLink.href = url;
+    els.recordingDownloadLink.download = filename;
+    els.recordingDownloadLink.type = type || blob.type || '';
+
+    els.recordingOpenLink.href = url;
+    els.recordingOpenLink.type = type || blob.type || '';
+}
+
+function triggerRecordingDownload(url, filename) {
     const link = document.createElement('a');
     link.href = url;
     link.download = filename;
+    link.rel = 'noopener';
+    link.style.display = 'none';
     document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+    try {
+        link.click();
+    } finally {
+        link.remove();
+    }
+}
+
+function showRecordingDownloadDialog() {
+    if (els.recordingDownloadDialog && typeof els.recordingDownloadDialog.showModal === 'function') {
+        if (!els.recordingDownloadDialog.open) {
+            els.recordingDownloadDialog.showModal();
+        }
+        return;
+    }
+
+    // Older iOS/Safari versions may not support <dialog>.
+    // Opening the blob gives the user a visible file page and the share/save controls.
+    window.open(state.lastRecordingObjectUrl, '_blank', 'noopener');
 }
 
 function setStatus(message) {

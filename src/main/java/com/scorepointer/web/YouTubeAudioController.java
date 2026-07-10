@@ -1,5 +1,8 @@
 package com.scorepointer.web;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -12,11 +15,17 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
@@ -25,10 +34,19 @@ import java.util.concurrent.TimeUnit;
 @RequestMapping("/api/youtube")
 public class YouTubeAudioController {
 
-    private final YtDlpBinaryResolver ytDlpBinaryResolver;
+    private static final Logger log = LoggerFactory.getLogger(YouTubeAudioController.class);
 
-    public YouTubeAudioController(YtDlpBinaryResolver ytDlpBinaryResolver) {
+    private final YtDlpBinaryResolver ytDlpBinaryResolver;
+    private final String cookiesFile;
+    private final String remoteComponents;
+
+    public YouTubeAudioController(
+            YtDlpBinaryResolver ytDlpBinaryResolver,
+            @Value("${scorepointer.ytdlp.cookies-file:}") String cookiesFile,
+            @Value("${scorepointer.ytdlp.remote-components:ejs:github}") String remoteComponents) {
         this.ytDlpBinaryResolver = ytDlpBinaryResolver;
+        this.cookiesFile = cookiesFile == null ? "" : cookiesFile.trim();
+        this.remoteComponents = remoteComponents == null ? "" : remoteComponents.trim();
     }
 
     @GetMapping(value = "/audio", produces = "audio/mp4")
@@ -80,15 +98,39 @@ public class YouTubeAudioController {
 
     private Process startYtDlpAudioProcess(String url) throws IOException {
         String ytDlpCommand = ytDlpBinaryResolver.resolveCommand();
-        List<String> command = List.of(
+        List<String> command = new ArrayList<>();
+        command.add(ytDlpCommand);
+        command.add("--no-progress");
+        command.add("--no-color");
+        command.add("--no-playlist");
+
+        if (hasText(remoteComponents)) {
+            command.add("--remote-components");
+            command.add(remoteComponents);
+        }
+
+        if (hasText(cookiesFile)) {
+            Path cookiesPath = Path.of(cookiesFile).toAbsolutePath().normalize();
+            if (!Files.isRegularFile(cookiesPath)) {
+                throw new IOException("Configured YouTube cookies file does not exist: " + cookiesPath);
+            }
+            command.add("--cookies");
+            command.add(cookiesPath.toString());
+        }
+
+        command.add("-f");
+        command.add("bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]");
+        command.add("-o");
+        command.add("-");
+        command.add(url);
+
+        log.info(
+                "Starting yt-dlp audio stream. command={}, cookiesConfigured={}, remoteComponents={}",
                 ytDlpCommand,
-                "--quiet",
-                "--no-warnings",
-                "--no-playlist",
-                "-f", "bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]",
-                "-o", "-",
-                url
+                hasText(cookiesFile),
+                hasText(remoteComponents) ? remoteComponents : "(disabled)"
         );
+
         return new ProcessBuilder(command).start();
     }
 
@@ -122,10 +164,15 @@ public class YouTubeAudioController {
 
     private void drainErrorStreamInBackground(InputStream errorStream) {
         Thread thread = new Thread(() -> {
-            try (errorStream) {
-                errorStream.transferTo(OutputStreamDiscard.INSTANCE);
-            } catch (IOException ignored) {
-                // Nothing useful to report to the browser while a streaming response is active.
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(errorStream, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (hasText(line)) {
+                        log.warn("yt-dlp: {}", line);
+                    }
+                }
+            } catch (IOException error) {
+                log.debug("Could not read yt-dlp stderr.", error);
             }
         }, "yt-dlp-stderr-drain");
         thread.setDaemon(true);
@@ -164,17 +211,7 @@ public class YouTubeAudioController {
         return false;
     }
 
-    private static final class OutputStreamDiscard extends java.io.OutputStream {
-        private static final OutputStreamDiscard INSTANCE = new OutputStreamDiscard();
-
-        @Override
-        public void write(int b) {
-            // Discard one byte.
-        }
-
-        @Override
-        public void write(byte[] b, int off, int len) {
-            // Discard bytes.
-        }
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 }
