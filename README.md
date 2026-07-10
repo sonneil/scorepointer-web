@@ -236,3 +236,10 @@ Keep `youtube-cookies.txt` out of git and treat it like a password.
 Recording startup now waits for the selected media element to reach a playable ready state before beginning the countdown/capture path.
 
 For YouTube audio fallback, the previous fixed 7-second wait was removed. The app now waits until the fallback audio element has real current media data, or until the browser reports a media error. This avoids starting a recording before a slower `yt-dlp` stream is actually ready.
+
+
+## Recording preparation overlay
+
+Pressing **Start Recording** now blocks the UI with a full-screen preparation overlay while the app loads media resources, prepares the YouTube audio fallback, unlocks playback, runs the 3-2-1 countdown, and starts `MediaRecorder`.
+
+The overlay is removed only after `MediaRecorder.start()` succeeds. If preparation fails or the recording cannot start, the overlay is hidden and the normal error/status message is shown.

@@ -96,6 +96,8 @@ const els = {
     recordingDownloadLink: document.getElementById('recordingDownloadLink'),
     recordingOpenLink: document.getElementById('recordingOpenLink'),
     recordingDownloadClose: document.getElementById('recordingDownloadClose'),
+    recordingPrepareOverlay: document.getElementById('recordingPrepareOverlay'),
+    recordingPrepareMessage: document.getElementById('recordingPrepareMessage'),
 };
 
 els.pdfInput.addEventListener('change', loadPdf);
@@ -654,7 +656,9 @@ async function onRecordButton() {
 async function waitForYouTubeAudioFallbackForRecording() {
     if (state.mediaType !== 'youtube') return false;
 
-    setStatus('Preparing YouTube audio fallback. Recording will start when the audio stream is ready...');
+    const message = 'Preparing YouTube audio fallback. Recording will start when the audio stream is ready...';
+    setStatus(message);
+    setRecordingPrepareOverlayMessage(message);
     safeSetCurrentTime(els.youtubeAudio, 0);
 
     try {
@@ -662,9 +666,11 @@ async function waitForYouTubeAudioFallbackForRecording() {
             minReadyState: HTMLMediaElement.HAVE_CURRENT_DATA,
             callLoad: true,
         });
+        setRecordingPrepareOverlayMessage('YouTube audio fallback is ready. Preparing recording...');
         return true;
     } catch (error) {
         setStatus(`YouTube audio fallback is unavailable: ${error.message}. The visible YouTube player may play, but its audio cannot be captured by the recording.`);
+        setRecordingPrepareOverlayMessage('YouTube fallback is unavailable. Starting PDF-only recording...');
         return false;
     }
 }
@@ -698,6 +704,8 @@ async function startRecording() {
 
     const mediaUnlockPromise = unlockMediaPlaybackForRecording();
 
+    showRecordingPrepareOverlay('Preparing recording...');
+
     try {
         setStatus('Preparing recording...');
 
@@ -707,6 +715,7 @@ async function startRecording() {
         const youtubeAudioFallbackReadyBeforePlayback = state.mediaType === 'youtube'
             ? await waitForYouTubeAudioFallbackForRecording()
             : false;
+        setRecordingPrepareOverlayMessage('Preparing recording canvas...');
 
         state.recordingLayout = createRecordingLayout(includeUploadedVideo);
         state.recordingCanvas = document.createElement('canvas');
@@ -723,7 +732,9 @@ async function startRecording() {
         els.recordButton.classList.add('recording');
         updateControls();
 
+        setRecordingPrepareOverlayMessage('Unlocking media playback...');
         await mediaUnlockPromise;
+        hideRecordingPrepareOverlay();
         await countdown();
         await playMedia({
             forRecording: true,
@@ -735,7 +746,6 @@ async function startRecording() {
             await waitForVideoPlaybackFrame(els.videoPlayer, 1500).catch(() => false);
             drawRecordingFrame();
         }
-
         const audioState = await addRecordingAudioTracks(stream);
         const youtubeAudioFallbackReady = audioState.youtubeAudioFallbackReady;
 
@@ -748,6 +758,7 @@ async function startRecording() {
             state.isRecording = false;
             els.recordButton.textContent = 'Start Recording';
             els.recordButton.classList.remove('recording');
+            hideRecordingPrepareOverlay();
             updateControls();
             showStartPointerRequirementDialog();
             return;
@@ -791,6 +802,7 @@ async function startRecording() {
         state.isRecording = false;
         els.recordButton.textContent = 'Start Recording';
         els.recordButton.classList.remove('recording');
+        hideRecordingPrepareOverlay();
         setStatus(`Recording failed: ${error.message}`);
         updateControls();
     }
@@ -1664,6 +1676,23 @@ function showRecordingDownloadDialog() {
     // Older iOS/Safari versions may not support <dialog>.
     // Opening the blob gives the user a visible file page and the share/save controls.
     window.open(state.lastRecordingObjectUrl, '_blank', 'noopener');
+}
+
+function showRecordingPrepareOverlay(message = 'Preparing recording...') {
+    setRecordingPrepareOverlayMessage(message);
+    els.recordingPrepareOverlay?.classList.remove('hidden');
+    document.body.classList.add('recording-preparing');
+}
+
+function setRecordingPrepareOverlayMessage(message) {
+    if (els.recordingPrepareMessage) {
+        els.recordingPrepareMessage.textContent = message;
+    }
+}
+
+function hideRecordingPrepareOverlay() {
+    els.recordingPrepareOverlay?.classList.add('hidden');
+    document.body.classList.remove('recording-preparing');
 }
 
 function setStatus(message) {
